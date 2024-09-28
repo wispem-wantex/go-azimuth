@@ -19,4 +19,6 @@ jobs:
       run: go mod download
 
     - name: Run tests
-      run: go test ./...
+      run: |
+        mkdir -p sample_data
+        go test ./...
