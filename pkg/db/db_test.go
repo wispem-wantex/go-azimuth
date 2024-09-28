@@ -1,9 +1,9 @@
 package db_test
 
 import (
-	"testing"
 	"fmt"
 	"math/rand"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 
@@ -18,7 +18,11 @@ func get_db(name string) DB {
 	return db
 }
 
-func TestCreateDB(t *testing.T) {
-	_, err := DBCreate(fmt.Sprintf("../../sample_data/random-%d.db", rand.Uint32()))
+func TestCreateAndConnectToDB(t *testing.T) {
+	i := rand.Uint32()
+	_, err := DBCreate(fmt.Sprintf("../../sample_data/random-%d.db", i))
+	assert.NoError(t, err)
+
+	_, err = DBConnect(fmt.Sprintf("../../sample_data/random-%d.db", i))
 	assert.NoError(t, err)
 }

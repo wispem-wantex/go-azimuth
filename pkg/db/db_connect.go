@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 
+	"database/sql"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
 //go:embed schema.sql
@@ -25,6 +27,19 @@ type DB struct {
 	DB *sqlx.DB
 }
 
+// Register `regexp` as a Go native function that can be used in SQL queries
+func init() {
+	sql.Register("sqlite3_with_go_funcs", &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			// Add Go-native regexps
+			err := conn.RegisterFunc("regexp", func(re, s string) (bool, error) {
+				return regexp.MatchString(re, s)
+			}, true)
+			return err
+		},
+	})
+}
+
 func DBCreate(path string) (DB, error) {
 	// First check if the path already exists
 	_, err := os.Stat(path)
@@ -35,9 +50,18 @@ func DBCreate(path string) (DB, error) {
 	}
 
 	// Create DB file
-	fmt.Printf("Creating %s.............\n", path)
-	db := sqlx.MustOpen("sqlite3", path+"?_foreign_keys=on")
+	fmt.Printf("Creating: %s\n", path)
+	db := sqlx.MustOpen("sqlite3_with_go_funcs", path+"?_foreign_keys=on")
 	db.MustExec(sql_schema)
+
+	for k, v := range EVENT_NAMES {
+		_, err := db.Exec("insert into event_types (contract_address, hashed_name, name) values (?, ?, ?)", "0x223c067f8cf28ae173ee5cafea60ca44c335fecb", k, v)
+		if err != nil {
+			fmt.Println(k, v)
+			panic(err)
+		}
+	}
+
 	return DB{db}, nil
 }
 
@@ -66,7 +90,7 @@ const (
 
 func (db DB) CheckAndUpdateVersion() error {
 	var version int
-	err := db.DB.Get(&version, "select version_number from db_version")
+	err := db.DB.Get(&version, "select version from db_version")
 	if err != nil {
 		return fmt.Errorf("couldn't check database version: %w", err)
 	}

@@ -3,15 +3,15 @@ PRAGMA foreign_keys = on;
 create table points (
 	azimuth_number integer primary key, -- @p
 
-	owner_address text not null default "" check (owner_address glob "0x[0-9a-fA-F]{40}"),
+	owner_address text not null default "" check (owner_address regexp "0x[0-9a-f]{40}"),
 	owner_nonce integer not null default 0,
-	spawn_address text not null default "" check (spawn_address glob "0x[0-9a-fA-F]{40}"),
+	spawn_address text not null default "" check (spawn_address regexp "0x[0-9a-f]{40}"),
 	spawn_nonce integer not null default 0,
-	management_address text not null default "" check (management_address glob "0x[0-9a-fA-F]{40}"),
+	management_address text not null default "" check (management_address regexp "0x[0-9a-f]{40}"),
 	management_nonce integer not null default 0,
-	voting_address text not null default "" check (voting_address glob "0x[0-9a-fA-F]{40}"),
+	voting_address text not null default "" check (voting_address regexp "0x[0-9a-f]{40}"),
 	voting_nonce integer not null default 0,
-	transfer_address text not null default "" check (transfer_address glob "0x[0-9a-fA-F]{40}"),
+	transfer_address text not null default "" check (transfer_address regexp "0x[0-9a-f]{40}"),
 	transfer_nonce integer not null default 0,
 
 	dominion integer not null default 1,
@@ -30,8 +30,8 @@ create table points (
 );
 
 create table operators (rowid integer primary key,
-	owner_address text not null check (owner_address glob "0x[0-9a-fA-F]{40}"),
-	authorized_operator_address text not null check (authorized_operator_address glob "0x[0-9a-fA-F]{40}"),
+	owner_address text not null check (owner_address regexp "0x[0-9a-f]{40}"),
+	authorized_operator_address text not null check (authorized_operator_address regexp "0x[0-9a-f]{40}"),
 
 	unique (owner_address, authorized_operator_address)
 );
