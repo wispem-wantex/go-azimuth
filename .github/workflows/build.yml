@@ -18,7 +18,7 @@ jobs:
     - name: Install dependencies
       run: |
         go mod download
-        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/go/bin v1.59.1
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.1
 
     - name: Lint
       run: golangci-lint run
