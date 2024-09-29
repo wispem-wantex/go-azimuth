@@ -3,15 +3,15 @@ PRAGMA foreign_keys = on;
 create table points (
 	azimuth_number integer primary key, -- @p
 
-	owner_address text not null default "" check (owner_address regexp "0x[0-9a-f]{40}"),
+	owner_address blob not null default "" check (length(owner_address) in (0, 20)),
 	owner_nonce integer not null default 0,
-	spawn_address text not null default "" check (spawn_address regexp "0x[0-9a-f]{40}"),
+	spawn_address blob not null default "" check (length(spawn_address) in (0, 20)),
 	spawn_nonce integer not null default 0,
-	management_address text not null default "" check (management_address regexp "0x[0-9a-f]{40}"),
+	management_address blob not null default "" check (length(management_address) in (0, 20)),
 	management_nonce integer not null default 0,
-	voting_address text not null default "" check (voting_address regexp "0x[0-9a-f]{40}"),
+	voting_address blob not null default "" check (length(voting_address) in (0, 20)),
 	voting_nonce integer not null default 0,
-	transfer_address text not null default "" check (transfer_address regexp "0x[0-9a-f]{40}"),
+	transfer_address blob not null default "" check (length(transfer_address) in (0, 20)),
 	transfer_nonce integer not null default 0,
 
 	dominion integer not null default 1,
@@ -28,10 +28,36 @@ create table points (
 	is_escape_requested bool not null default 0,
 	escape_requested_to integer not null default 0 -- @p
 );
+create view readable_points as
+	select
+    azimuth_number,
+    lower(hex(owner_address)) as owner_address,
+    owner_nonce,
+    lower(hex(spawn_address)) as spawn_address,
+    spawn_nonce,
+    lower(hex(management_address)) as management_address,
+    management_nonce,
+    lower(hex(voting_address)) as voting_address,
+    voting_nonce,
+    lower(hex(transfer_address)) as transfer_address,
+    transfer_nonce,
+    dominion,
+    is_active,
+    life,
+    rift,
+    crypto_suite_version,
+    lower(hex(auth_key)) as auth_key,
+    lower(hex(encryption_key)) as encryption_key,
+    has_sponsor,
+    sponsor,
+    is_escape_requested,
+    escape_requested_to
+from points;
+
 
 create table operators (rowid integer primary key,
-	owner_address text not null check (owner_address regexp "0x[0-9a-f]{40}"),
-	authorized_operator_address text not null check (authorized_operator_address regexp "0x[0-9a-f]{40}"),
+	owner_address blob not null check (length(owner_address) in (0, 20)),
+	authorized_operator_address blob not null check (length(authorized_operator_address) in (0, 20)),
 
 	unique (owner_address, authorized_operator_address)
 );
@@ -41,23 +67,38 @@ create table dns (rowid integer primary key,
 );
 
 create table block_progress (rowid integer primary key,
+	contract_address blob not null unique collate nocase,
 	latest_block integer
 );
 
+create table event_types (rowid integer primary key,
+	contract_address blob not null collate nocase check (length(contract_address) in (0, 20)),
+	hashed_name blob unique not null,
+	name text not null,
+	unique (contract_address, hashed_name)
+);
+create view readable_event_types as
+	select "0x" || lower(hex(contract_address)), lower(hex(hashed_name)), name from event_types; -- write the blob in hex format
+
 create table event_logs (rowid integer primary key,
 	block_number integer not null,
-	block_hash text not null,
-	tx_hash text not null,
+	block_hash blob not null,
+	tx_hash blob not null,
 	log_index integer not null,
-	name text not null,
-	topic0 text not null, topic1 text not null default "", topic2 text not null default "",
-	data text not null default "",
+
+	contract_address blob not null collate nocase,
+	topic0 blob not null,
+	topic1 blob not null default "",
+	topic2 blob not null default "",
+	data blob not null default "",
 
 	is_processed bool not null default 0,
 
 	unique(block_number, log_index)
+	foreign key(contract_address, topic0) references event_types(contract_address, hashed_name)
 );
-
+create view readable_event_logs as
+	select block_number, lower(hex(block_hash)) hex_block_hash, lower(hex(tx_hash)) hex_tx_hash, log_index, "0x" || lower(hex(event_logs.contract_address)) hex_contract_address, name, lower(hex(topic0)) hex_topic0, lower(hex(topic1)) hex_topic1, lower(hex(topic2)) hex_topic2, lower(hex(data)) hex_data, is_processed from event_logs join event_types on topic0 = hashed_name;
 
 create table db_version (
 	version integer

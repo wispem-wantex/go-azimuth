@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 
-	"database/sql"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/jmoiron/sqlx"
-	sqlite3 "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 //go:embed schema.sql
@@ -27,18 +26,6 @@ type DB struct {
 	DB *sqlx.DB
 }
 
-// Register `regexp` as a Go native function that can be used in SQL queries
-func init() {
-	sql.Register("sqlite3_with_go_funcs", &sqlite3.SQLiteDriver{
-		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-			// Add Go-native regexps
-			err := conn.RegisterFunc("regexp", func(re, s string) (bool, error) {
-				return regexp.MatchString(re, s)
-			}, true)
-			return err
-		},
-	})
-}
 
 func DBCreate(path string) (DB, error) {
 	// First check if the path already exists
@@ -51,11 +38,14 @@ func DBCreate(path string) (DB, error) {
 
 	// Create DB file
 	fmt.Printf("Creating: %s\n", path)
-	db := sqlx.MustOpen("sqlite3_with_go_funcs", path+"?_foreign_keys=on")
+	db := sqlx.MustOpen("sqlite3", path+"?_foreign_keys=on")
 	db.MustExec(sql_schema)
 
 	for k, v := range EVENT_NAMES {
-		_, err := db.Exec("insert into event_types (contract_address, hashed_name, name) values (?, ?, ?)", "0x223c067f8cf28ae173ee5cafea60ca44c335fecb", k, v)
+		_, err := db.Exec(
+			"insert into event_types (contract_address, hashed_name, name) values (?, ?, ?)",
+			common.HexToAddress("223c067f8cf28ae173ee5cafea60ca44c335fecb"), k, v,
+		)
 		if err != nil {
 			fmt.Println(k, v)
 			panic(err)
@@ -100,11 +90,11 @@ func (db DB) CheckAndUpdateVersion() error {
 	}
 
 	if ENGINE_DATABASE_VERSION > version {
-		fmt.Printf(COLOR_YELLOW)
+		fmt.Print(COLOR_YELLOW)
 		fmt.Printf("================================================\n")
 		fmt.Printf("Database version is out of date.  Upgrading database from version %d to version %d!\n", version,
 			ENGINE_DATABASE_VERSION)
-		fmt.Printf(COLOR_RESET)
+		fmt.Print(COLOR_RESET)
 		return db.UpgradeFromXToY(version, ENGINE_DATABASE_VERSION)
 	}
 
@@ -114,21 +104,21 @@ func (db DB) CheckAndUpdateVersion() error {
 // Run all the migrations from version X to version Y, and update the `database_version` table's `version_number`
 func (db DB) UpgradeFromXToY(x int, y int) error {
 	for i := x; i < y; i++ {
-		fmt.Printf(COLOR_CYAN)
+		fmt.Print(COLOR_CYAN)
 		fmt.Println(MIGRATIONS[i])
-		fmt.Printf(COLOR_RESET)
+		fmt.Print(COLOR_RESET)
 
 		db.DB.MustExec(MIGRATIONS[i])
 		db.DB.MustExec("update database_version set version_number = ?", i+1)
 
-		fmt.Printf(COLOR_YELLOW)
+		fmt.Print(COLOR_YELLOW)
 		fmt.Printf("Now at database schema version %d.\n", i+1)
-		fmt.Printf(COLOR_RESET)
+		fmt.Print(COLOR_RESET)
 	}
-	fmt.Printf(COLOR_GREEN)
+	fmt.Print(COLOR_GREEN)
 	fmt.Printf("================================================\n")
 	fmt.Printf("Database version has been upgraded to version %d.\n", y)
-	fmt.Printf(COLOR_RESET)
+	fmt.Print(COLOR_RESET)
 	return nil
 }
 
