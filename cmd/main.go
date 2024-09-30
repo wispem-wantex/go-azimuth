@@ -15,8 +15,7 @@ import (
 )
 
 const (
-	INFURA_URL = "https://mainnet.infura.io/v3/%s"
-	API_KEY    = "55f4d583b84249a7a7227225fabbd754"
+	RPC_URL = "https://cloudflare-eth.com/v1/mainnet"
 )
 
 var DB_PATH = ""
@@ -63,7 +62,7 @@ func main() {
 
 func catch_up_logs(with_apply bool) {
 	db := get_db(DB_PATH)
-	client, err := ethclient.Dial(fmt.Sprintf(INFURA_URL, API_KEY))
+	client, err := ethclient.Dial(RPC_URL)
 	if err != nil {
 		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
 	}
