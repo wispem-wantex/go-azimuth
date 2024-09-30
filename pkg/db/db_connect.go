@@ -40,17 +40,6 @@ func DBCreate(path string) (DB, error) {
 	db := sqlx.MustOpen("sqlite3", path+"?_foreign_keys=on&_journal_mode=WAL")
 	db.MustExec(sql_schema)
 
-	for k, v := range EVENT_NAMES {
-		_, err := db.Exec(
-			"insert into event_types (contract_address, hashed_name, name) values (?, ?, ?)",
-			common.HexToAddress("223c067f8cf28ae173ee5cafea60ca44c335fecb"), k, v,
-		)
-		if err != nil {
-			fmt.Println(k, v)
-			panic(err)
-		}
-	}
-
 	return DB{db}, nil
 }
 

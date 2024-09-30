@@ -23,6 +23,10 @@ jobs:
     - name: Lint
       run: golangci-lint run
 
+    - name: Validate SQL schema
+      run: |
+        sqlite3 whatever.db < pkg/db/schema.sql
+
     - name: Run tests
       run: |
         mkdir -p sample_data
