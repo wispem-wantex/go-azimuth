@@ -3,15 +3,15 @@ PRAGMA foreign_keys = on;
 create table points (
 	azimuth_number integer primary key, -- @p
 
-	owner_address blob not null default "" check (length(owner_address) in (0, 20)),
+	owner_address blob not null default X'0000000000000000000000000000000000000000' check (length(owner_address) = 20),
 	owner_nonce integer not null default 0,
-	spawn_address blob not null default "" check (length(spawn_address) in (0, 20)),
+	spawn_address blob not null default X'0000000000000000000000000000000000000000' check (length(spawn_address) = 20),
 	spawn_nonce integer not null default 0,
-	management_address blob not null default "" check (length(management_address) in (0, 20)),
+	management_address blob not null default X'0000000000000000000000000000000000000000' check (length(management_address) = 20),
 	management_nonce integer not null default 0,
-	voting_address blob not null default "" check (length(voting_address) in (0, 20)),
+	voting_address blob not null default X'0000000000000000000000000000000000000000' check (length(voting_address) = 20),
 	voting_nonce integer not null default 0,
-	transfer_address blob not null default "" check (length(transfer_address) in (0, 20)),
+	transfer_address blob not null default X'0000000000000000000000000000000000000000' check (length(transfer_address) = 20),
 	transfer_nonce integer not null default 0,
 
 	dominion integer not null default 1,
@@ -19,8 +19,8 @@ create table points (
 	life integer not null default 0, -- How many times networking keys have been reset (starts at 1 on initializing keys)
 	rift integer not null default 0, -- How many times the ship has breached (starts at 0)
 	crypto_suite_version integer not null default 0, -- version of the crypto suite used for the pubkeys
-	auth_key blob not null default "",  -- Authentication public key
-	encryption_key blob not null default "", -- Encryption public key
+	auth_key blob not null default X'',  -- Authentication public key
+	encryption_key blob not null default X'', -- Encryption public key
 
 	has_sponsor bool not null default 0, -- Don't want to deal with nullable ints in Go
 	sponsor integer not null default 0, -- @p
@@ -54,10 +54,9 @@ create view readable_points as
     escape_requested_to
 from points;
 
-
 create table operators (rowid integer primary key,
-	owner_address blob not null check (length(owner_address) in (0, 20)),
-	authorized_operator_address blob not null check (length(authorized_operator_address) in (0, 20)),
+	owner_address blob not null check (length(owner_address) = 20),
+	authorized_operator_address blob not null check (length(authorized_operator_address) = 20),
 
 	unique (owner_address, authorized_operator_address)
 );
@@ -72,7 +71,7 @@ create table block_progress (rowid integer primary key,
 );
 
 create table event_types (rowid integer primary key,
-	contract_address blob not null collate nocase check (length(contract_address) in (0, 20)),
+	contract_address blob not null collate nocase check (length(contract_address) = 20),
 	hashed_name blob unique not null,
 	name text not null,
 	unique (contract_address, hashed_name)
@@ -97,6 +96,7 @@ create table event_logs (rowid integer primary key,
 	unique(block_number, log_index)
 	foreign key(contract_address, topic0) references event_types(contract_address, hashed_name)
 );
+create index index_event_logs_is_processed on event_logs(is_processed);
 create view readable_event_logs as
 	select block_number, lower(hex(block_hash)) hex_block_hash, lower(hex(tx_hash)) hex_tx_hash, log_index, "0x" || lower(hex(event_logs.contract_address)) hex_contract_address, name, lower(hex(topic0)) hex_topic0, lower(hex(topic1)) hex_topic1, lower(hex(topic2)) hex_topic2, lower(hex(data)) hex_data, is_processed from event_logs join event_types on topic0 = hashed_name;
 

@@ -37,7 +37,7 @@ func DBCreate(path string) (DB, error) {
 
 	// Create DB file
 	fmt.Printf("Creating: %s\n", path)
-	db := sqlx.MustOpen("sqlite3", path+"?_foreign_keys=on")
+	db := sqlx.MustOpen("sqlite3", path+"?_foreign_keys=on&_journal_mode=WAL")
 	db.MustExec(sql_schema)
 
 	for k, v := range EVENT_NAMES {
