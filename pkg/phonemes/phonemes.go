@@ -95,7 +95,7 @@ func IntToPhonemeNonGalaxy(i uint64) string {
 	return fmt.Sprintf("%s-%s", IntToPhonemeNonGalaxy(i/0x1_00_00), IntToPhonemeNonGalaxy(i%0x1_00_00))
 }
 
-func IntToPhoneme(i uint64) string {
+func IntToPhonemeQ(i uint64) string {
 	if i < 0x1_00 {
 		return SUFFIXES[i]
 	}
@@ -104,7 +104,7 @@ func IntToPhoneme(i uint64) string {
 }
 
 // Returns the value and a bool indicating whether the conversion succeeded (whether it was successful)
-func PhonemeToInt(s string) (uint64, bool) {
+func PhonemeQToInt(s string) (uint64, bool) {
 	if len(s) == 3 {
 		val, is_ok := SUFFIX_LOOKUP[s]
 		return val, is_ok
@@ -128,4 +128,23 @@ func PhonemeToInt(s string) (uint64, bool) {
 		ret += sfix
 	}
 	return ret, true
+}
+
+func IntToPhoneme(i uint64) string {
+	if i < 0x1_0000_0000 {
+		return IntToPhonemeQ(uint64(Scramble(uint32(i))))
+	}
+	j := (i & 0xffff_ffff_0000_0000) + uint64(Scramble(uint32(i&0xffff_ffff)))
+	return IntToPhonemeQ(j)
+}
+
+func PhonemeToInt(s string) (uint64, bool) {
+	i, is_ok := PhonemeQToInt(s)
+	if !is_ok {
+		return 0, false
+	}
+	if i < 0x1_0000_0000 {
+		return uint64(Unscramble(uint32(i))), true
+	}
+	return (i & 0xffff_ffff_0000_0000) + uint64(Unscramble(uint32(i&0xffff_ffff))), true
 }

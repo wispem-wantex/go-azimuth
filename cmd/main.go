@@ -72,18 +72,28 @@ func catch_up_logs(with_apply bool) {
 	scraper.CatchUpAzimuthLogs(client, db, with_apply)
 }
 
+func catch_up_logs_naive() {
+	db := get_db(DB_PATH)
+	client, err := ethclient.Dial(fmt.Sprintf(INFURA_URL, API_KEY))
+	if err != nil {
+		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
+	}
+	defer client.Close()
+
+	scraper.CatchUpNaiveLogs(client, db, false)
+}
+
 func play_logs() {
 	db := get_db(DB_PATH)
 	db.PlayAzimuthLogs()
 }
 
 func query(urbit_id string) {
-	_point, is_ok := phonemes.PhonemeToInt(urbit_id)
+	point, is_ok := phonemes.PhonemeToInt(urbit_id)
 	if !is_ok {
 		fmt.Printf("Not a valid phoneme: %q\n", urbit_id)
 		os.Exit(1)
 	}
-	point := phonemes.Unscramble(uint32(_point))
 	fmt.Printf("Querying point %d\n", point)
 
 	db := get_db(DB_PATH)

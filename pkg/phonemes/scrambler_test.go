@@ -16,7 +16,7 @@ func TestPrf(t *testing.T) {
 	assert.Equal(uint32(3_602_081_716), murmur3.Sum32WithSeed([]byte{106, 101}, 6))
 	assert.Equal(uint32(2_334_372_916), murmur3.Sum32WithSeed([]byte{178, 14}, 0xb76d_5eed))
 
-	v, is_ok := phonemes.PhonemeToInt("wispem")
+	v, is_ok := phonemes.PhonemeQToInt("wispem")
 	assert.True(is_ok)
 	assert.Equal(uint32(2_334_372_916), phonemes.Prf(0, uint16(v)))
 	assert.Equal(uint32(1_163_263_495), phonemes.Prf(1, uint16(v)))
@@ -39,7 +39,7 @@ func TestFein(t *testing.T) {
 		{"wispem-wantex", 2_849_588_615},
 	}
 	for _, c := range test_cases {
-		v, is_ok := phonemes.PhonemeToInt(c.Shipname)
+		v, is_ok := phonemes.PhonemeQToInt(c.Shipname)
 		assert.True(is_ok)
 		assert.Equal(c.FeVal, phonemes.Fein(uint32(v)))
 	}
@@ -58,7 +58,7 @@ func TestFynd(t *testing.T) {
 		{"wispem-wantex", 2_849_588_615},
 	}
 	for _, c := range test_cases {
-		v, is_ok := phonemes.PhonemeToInt(c.Shipname)
+		v, is_ok := phonemes.PhonemeQToInt(c.Shipname)
 		assert.True(is_ok)
 		assert.Equal(uint32(v), phonemes.Fynd(c.FeVal))
 	}
@@ -82,9 +82,9 @@ func TestScrambleUnscramble(t *testing.T) {
 		{"winhes-doplus", "mirdyt-dasfeb"},
 	}
 	for _, c := range test_cases {
-		p, is_ok := phonemes.PhonemeToInt(c.P)
+		p, is_ok := phonemes.PhonemeQToInt(c.P)
 		assert.True(is_ok)
-		q, is_ok := phonemes.PhonemeToInt(c.Q)
+		q, is_ok := phonemes.PhonemeQToInt(c.Q)
 		assert.True(is_ok)
 		assert.Equal(uint32(p), phonemes.Scramble(uint32(q)))
 		assert.Equal(uint32(q), phonemes.Unscramble(uint32(p)))
