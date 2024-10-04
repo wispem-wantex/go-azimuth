@@ -72,17 +72,6 @@ func catch_up_logs(with_apply bool) {
 	scraper.CatchUpAzimuthLogs(client, db, with_apply)
 }
 
-func catch_up_logs_naive() {
-	db := get_db(DB_PATH)
-	client, err := ethclient.Dial(fmt.Sprintf(INFURA_URL, API_KEY))
-	if err != nil {
-		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
-	}
-	defer client.Close()
-
-	scraper.CatchUpNaiveLogs(client, db, false)
-}
-
 func play_logs() {
 	db := get_db(DB_PATH)
 	db.PlayAzimuthLogs()
