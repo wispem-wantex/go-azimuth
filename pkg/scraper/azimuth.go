@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	AZIMUTH_ADDRESS    = "0x223c067f8cf28ae173ee5cafea60ca44c335fecb"
-	START_BLOCK_NUMBER = 6784880
+	AZIMUTH_ADDRESS            = "0x223c067f8cf28ae173ee5cafea60ca44c335fecb"
+	AZIMUTH_START_BLOCK_NUMBER = 6784880
 )
 
 // This is insane, but it's the recommended way to do it.
@@ -55,7 +55,7 @@ func check_error(err error) (int64, bool) {
 }
 
 // Convert it to Our Type, with sanity checks
-func ParseEthereumLog(l types.Log) AzimuthEventLog {
+func ParseAzimuthLog(l types.Log) AzimuthEventLog {
 	event := AzimuthEventLog{
 		BlockNumber: l.BlockNumber,
 		BlockHash:   l.BlockHash,
@@ -86,7 +86,7 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB, apply_logs bool) {
 	}
 
 	batch_size := int64(100000)
-	from_block := big.NewInt(START_BLOCK_NUMBER)
+	from_block := big.NewInt(AZIMUTH_START_BLOCK_NUMBER)
 	to_block := big.NewInt(0).Add(from_block, big.NewInt(batch_size-1))
 	contractAddress := common.HexToAddress(AZIMUTH_ADDRESS)
 	for i := 0; i < 1000 && from_block.Uint64() < latest_block; i++ {
@@ -118,12 +118,12 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB, apply_logs bool) {
 				fmt.Println(hex.EncodeToString(l.Data))
 			}
 
-			azimuth_event_log := ParseEthereumLog(l)
+			azimuth_event_log := ParseAzimuthLog(l)
 			if azimuth_event_log.Name == "" {
 				// Probably an Ecliptic log
 				continue
 			}
-			db.Save(azimuth_event_log)
+			db.SaveEvent(azimuth_event_log)
 			if apply_logs {
 				db.ApplyEventEffects([]AzimuthEventLog{azimuth_event_log})
 			}

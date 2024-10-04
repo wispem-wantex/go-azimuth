@@ -83,7 +83,7 @@ type AzimuthEventLog struct {
 	IsProcessed bool `db:"is_processed"`
 }
 
-func (db *DB) Save(e AzimuthEventLog) {
+func (db *DB) SaveEvent(e AzimuthEventLog) {
 	fmt.Printf("%#v\n", e)
 	_, err := db.DB.NamedExec(`
 		insert into event_logs (
