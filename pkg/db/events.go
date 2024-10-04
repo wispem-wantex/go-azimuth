@@ -60,6 +60,8 @@ func init() {
 	// EVENT_NAMES[OWNERSHIP_TRANSFERRED] = "OwnershipTransferred"
 }
 
+var L2_DEPOSIT_ADDRESS = common.HexToAddress("1111111111111111111111111111111111111111")
+
 type Query struct {
 	SQL        string
 	BindValues interface{}
@@ -101,8 +103,11 @@ func (db *DB) PlayAzimuthLogs() {
 	for {
 		// Batches of 500
 		err := db.DB.Select(&events, `
-			select block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
-			        topic2, data, is_processed from event_logs where is_processed = 0 order by block_number, log_index asc limit 500
+		    select block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
+		            topic2, data, is_processed from event_logs
+		     where contract_address = X'223c067f8cf28ae173ee5cafea60ca44c335fecb' and is_processed = 0
+		  order by block_number, log_index asc
+		     limit 500
 		`)
 		if err != nil {
 			panic(err)
@@ -193,35 +198,64 @@ func (e AzimuthEventLog) Effects() Query {
 			Number:       topic_to_azimuth_number(e.Topic1),
 			OwnerAddress: topic_to_eth_address(e.Topic2),
 		}
-		return Query{`
-			insert into points (azimuth_number, owner_address)
-						values (:azimuth_number, :owner_address)
-			on conflict do update
-			        set owner_address=:owner_address`,
-			p,
+		if p.OwnerAddress == L2_DEPOSIT_ADDRESS {
+			// Deposited to L2
+			p.Dominion = 2
+			return Query{`
+				insert into points (azimuth_number, dominion)
+				            values (:azimuth_number, :dominion)
+				on conflict do update
+				        set dominion=:dominion`,
+				p,
+			}
+		} else {
+			return Query{`
+				insert into points (azimuth_number, owner_address)
+							values (:azimuth_number, :owner_address)
+				on conflict do update
+				        set owner_address=:owner_address
+			          where dominion != 2`,
+				p,
+			}
 		}
 	case CHANGED_SPAWN_PROXY:
 		p := Point{
 			Number:       topic_to_azimuth_number(e.Topic1),
 			SpawnAddress: topic_to_eth_address(e.Topic2),
 		}
-		return Query{`
-			insert into points (azimuth_number, spawn_address)
-			            values (:azimuth_number, :spawn_address)
-			on conflict do update
-			        set spawn_address=:spawn_address`,
-			p,
+		if p.Number <= 0xffff && p.SpawnAddress == L2_DEPOSIT_ADDRESS {
+			// Setting spawn proxy to the L2 deposit address represents migrating to the "Spawn" dominion.
+			// It's not a real / valid change of spawn proxy address.
+			// In the "spawn" dominion, the ship (star or galaxy) is on L1, but it spawns on L2.
+			p.Dominion = 3 // "spawn" dominion; ship is on L1, but spawns on L2
+			return Query{`
+				insert into points (azimuth_number, dominion)
+				            values (:azimuth_number, :dominion)
+				on conflict do update
+				        set dominion=:dominion`,
+				p,
+			}
+		} else {
+			// Actual change of spawn-proxy address
+			return Query{`
+				insert into points (azimuth_number, spawn_address)
+				            values (:azimuth_number, :spawn_address)
+				on conflict do update
+				        set spawn_address=:spawn_address`,
+				p,
+			}
 		}
 	case CHANGED_TRANSFER_PROXY:
 		p := Point{
 			Number:          topic_to_azimuth_number(e.Topic1),
 			TransferAddress: topic_to_eth_address(e.Topic2),
 		}
-		return Query{
-			`insert into points (azimuth_number, transfer_address)
-			             values (:azimuth_number, :transfer_address)
-			 on conflict do update
-			         set transfer_address=:transfer_address`,
+		return Query{`
+			insert into points (azimuth_number, transfer_address)
+			            values (:azimuth_number, :transfer_address)
+			on conflict do update
+			        set transfer_address=:transfer_address
+			      where dominion != 2`,
 			p,
 		}
 	case CHANGED_MANAGEMENT_PROXY:
@@ -233,7 +267,8 @@ func (e AzimuthEventLog) Effects() Query {
 			insert into points (azimuth_number, management_address)
 			            values (:azimuth_number, :management_address)
 			on conflict do update
-			        set management_address=:management_address`,
+			        set management_address=:management_address
+			      where dominion != 2`,
 			p,
 		}
 	case CHANGED_VOTING_PROXY:
@@ -245,7 +280,8 @@ func (e AzimuthEventLog) Effects() Query {
 			insert into points (azimuth_number, voting_address)
 			            values (:azimuth_number, :voting_address)
 			on conflict do update
-			        set voting_address=:voting_address`,
+			        set voting_address=:voting_address
+			      where dominion != 2`,
 			p,
 		}
 	case ESCAPE_REQUESTED:
@@ -259,7 +295,8 @@ func (e AzimuthEventLog) Effects() Query {
 			            values (:azimuth_number, 1, :escape_requested_to)
 			on conflict do update
 			        set is_escape_requested=1,
-			            escape_requested_to=:escape_requested_to`,
+			            escape_requested_to=:escape_requested_to
+			      where dominion != 2`,
 			p,
 		}
 	case ESCAPE_CANCELED:
@@ -272,10 +309,12 @@ func (e AzimuthEventLog) Effects() Query {
 			insert into points (azimuth_number, is_escape_requested, escape_requested_to)
 			            values (:azimuth_number, 0, 0)
 			on conflict do update
-			        set is_escape_requested=0, escape_requested_to=0`,
+			        set is_escape_requested=0, escape_requested_to=0
+			      where dominion != 2`,
 			p,
 		}
 	case ESCAPE_ACCEPTED:
+		// TODO: ignore event if new sponsor is L2 (not sure how this could happen, but it's in naive.hoon)
 		p := Point{
 			Number:            topic_to_azimuth_number(e.Topic1),
 			IsEscapeRequested: false,
@@ -294,6 +333,8 @@ func (e AzimuthEventLog) Effects() Query {
 			p,
 		}
 	case LOST_SPONSOR:
+		// TODO: ignore event if lost sponsor (e.Topic2) isn't this point's sponsor
+		// TODO: ignore event if new sponsor is L2 (not sure how this could happen, but it's in naive.hoon)
 		p := Point{
 			Number:     topic_to_azimuth_number(e.Topic1),
 			HasSponsor: false,
@@ -314,7 +355,8 @@ func (e AzimuthEventLog) Effects() Query {
 			insert into points (azimuth_number, rift)
 			            values (:azimuth_number, :rift)
 			on conflict do update
-			        set rift=:rift`,
+			        set rift=:rift
+			      where dominion != 2`,
 			p,
 		}
 	case CHANGED_KEYS:
@@ -336,12 +378,13 @@ func (e AzimuthEventLog) Effects() Query {
 			        set encryption_key=:encryption_key,
 			            auth_key=:auth_key,
 			            crypto_suite_version=:crypto_suite_version,
-			            life=:life`,
+			            life=:life
+			      where dominion != 2`,
 			p,
 		}
 	case CHANGED_DNS:
 		return Query{} // TODO
 	default:
-		panic("???")
+		panic(e.Topic0)
 	}
 }
