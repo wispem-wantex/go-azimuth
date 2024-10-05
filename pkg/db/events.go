@@ -35,7 +35,8 @@ var (
 	// APPROVAL_FOR_ALL         = get_hash("ApprovalForAll(address,address,bool)")
 	// OWNERSHIP_TRANSFERRED    = get_hash("OwnershipTransferred(address,address)")
 
-	// Naive Events (TODO)
+	// Naive Events
+	BATCH = get_hash("Batch()")
 )
 
 var EVENT_NAMES = map[common.Hash]string{}
@@ -58,6 +59,8 @@ func init() {
 
 	// EVENT_NAMES[APPROVAL_FOR_ALL] = "ApprovalForAll"
 	// EVENT_NAMES[OWNERSHIP_TRANSFERRED] = "OwnershipTransferred"
+
+	EVENT_NAMES[BATCH] = "Batch"
 }
 
 var L2_DEPOSIT_ADDRESS = common.HexToAddress("1111111111111111111111111111111111111111")
@@ -95,6 +98,21 @@ func (db *DB) SaveEvent(e AzimuthEventLog) {
 	`, e)
 	if err != nil {
 		panic(err)
+	}
+}
+
+// Either create a new event, or add in the Naive Batch data after the fact
+func (db *DB) SmuggleNaiveBatchDataIntoEvent(e AzimuthEventLog) {
+	rslt, err := db.DB.NamedExec(`update event_logs set data=:data where block_number=:block_number and log_index=:log_index`, e)
+	if err != nil {
+		panic(err)
+	}
+	// Ensure that a row was updated
+	rows_affected, err := rslt.RowsAffected()
+	if err != nil {
+		panic(err)
+	} else if rows_affected != 1 {
+		panic(e)
 	}
 }
 

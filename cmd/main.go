@@ -55,6 +55,8 @@ func main() {
 		play_logs()
 	case "query":
 		query(args[1])
+	case "get_logs_naive":
+		catch_up_logs_naive()
 	default:
 		fmt.Printf("invalid subcommand: %q\n", args[0])
 		os.Exit(1)
@@ -70,6 +72,17 @@ func catch_up_logs(with_apply bool) {
 	defer client.Close()
 
 	scraper.CatchUpAzimuthLogs(client, db, with_apply)
+}
+
+func catch_up_logs_naive() {
+	db := get_db(DB_PATH)
+	client, err := ethclient.Dial(fmt.Sprintf(INFURA_URL, API_KEY))
+	if err != nil {
+		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
+	}
+	defer client.Close()
+
+	scraper.CatchUpNaiveLogs(client, db, false)
 }
 
 func play_logs() {

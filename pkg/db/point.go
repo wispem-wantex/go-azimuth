@@ -13,15 +13,15 @@ type Point struct {
 
 	// Nonces are for L2 to prevent replay attacks
 	OwnerAddress      common.Address `db:"owner_address"`
-	OwnerNonce        int            `db:"owner_nonce"`
+	OwnerNonce        uint32         `db:"owner_nonce"`
 	SpawnAddress      common.Address `db:"spawn_address"`
-	SpawnNonce        int            `db:"spawn_nonce"`
+	SpawnNonce        uint32         `db:"spawn_nonce"`
 	ManagementAddress common.Address `db:"management_address"`
-	ManagementNonce   int            `db:"management_nonce"`
+	ManagementNonce   uint32         `db:"management_nonce"`
 	VotingAddress     common.Address `db:"voting_address"`
-	VotingNonce       int            `db:"voting_nonce"`
+	VotingNonce       uint32         `db:"voting_nonce"`
 	TransferAddress   common.Address `db:"transfer_address"`
-	TransferNonce     int            `db:"transfer_nonce"`
+	TransferNonce     uint32         `db:"transfer_nonce"`
 
 	Dominion int    `db:"dominion"`
 	IsActive bool   `db:"is_active"`
