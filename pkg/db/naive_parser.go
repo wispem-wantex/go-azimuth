@@ -152,6 +152,18 @@ func (tx NaiveTx) VerifySignature(source_ship_point Point) bool {
 	return address == proxy_address
 }
 
+func bytesToAzimuthNumber(b []byte) AzimuthNumber {
+	if len(b) > 4 {
+		panic("bytesToAzimuthNumber slice too long: must be 4 bytes or fewer")
+	}
+
+	buf := make([]byte, 4)
+
+	copy(buf[4-len(b):], b)
+
+	return AzimuthNumber(binary.BigEndian.Uint32(buf))
+}
+
 // 1. Reverse the byte slice
 // 2. 65 bytes => signature
 // 3. 1 byte => proxy type (incl. owner)
@@ -212,13 +224,13 @@ func ParseNaiveBatch(batch []byte) []NaiveTx {
 		switch tx.Opcode {
 		case OP_TRANSFER_POINT:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 			tx.Flag = flag // reset
 		case OP_SPAWN:
 			i, j = i-4, i
 			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		case OP_CONFIGURE_KEYS:
 			i, j = i-32, i
 			tx.EncryptionKey = batch[i:j]
@@ -226,37 +238,35 @@ func ParseNaiveBatch(batch []byte) []NaiveTx {
 			i, j = i-32, i
 			tx.AuthKey = batch[i:j]
 
-			// WTF: if this is the last tx in the batch, leading "0x00"s could be chopped off
-			i, _ = i-4, i //
+			i, _ = i-4, i
 			tx.CryptoSuiteVersion = uint(batch[max(0, i)])
 			tx.Flag = flag // breach
 		case OP_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = bytesToAzimuthNumber(batch[max(0, i):j])
 		case OP_CANCEL_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = bytesToAzimuthNumber(batch[max(0, i):j])
 		case OP_ADOPT:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = bytesToAzimuthNumber(batch[max(0, i):j])
 		case OP_REJECT:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = bytesToAzimuthNumber(batch[max(0, i):j])
 		case OP_DETACH:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = bytesToAzimuthNumber(batch[max(0, i):j])
 		case OP_SET_MANAGEMENT_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		case OP_SET_SPAWN_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		case OP_SET_TRANSFER_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		}
 
-		// Handling for CryptoSuiteVersion being unpadded for some reason
 		padding_length := -min(0, i) // If `i` is negative, add `-i` bytes of padding
 		tx.TxRawData = append(make([]byte, padding_length), batch[max(0, i):tx_mark]...)
 		ret = append(ret, tx)

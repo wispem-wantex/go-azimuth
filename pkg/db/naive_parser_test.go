@@ -87,6 +87,39 @@ func TestParseNaiveBatch(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Batch with leading zeroes, livenet tx hash 0x0b72ac24611bcc7ba34ffca751e88cbd9431851dec4b1849a6db9c088ddd82e5
+			hex_to_bytes(
+				"3eb303beccfeac00594a127b1ea1a880de4c446971932d15b1b021ad13be5e09f98ebb71f45f06967" +
+					"f17bacca27d84b448ec5809c15ca48ff73d47a541e94be994ef774fe9b56ba01b00003eb30321cdfe" +
+					"ac00845adadfb162528b3df3d407b8177060b5284f9d9257cee641b143e4cfd30af74ca01325ef50b" +
+					"e6349d4ae69698992fcf74ef544e63ae1461d7ce1913000a3ef1c"),
+			[]NaiveTx{
+				{
+					Signature: hex_to_signature(
+						"845adadfb162528b3df3d407b8177060b5284f9d9257cee641b143e4cfd30af74ca01325ef" +
+							"50be6349d4ae69698992fcf74ef544e63ae1461d7ce1913000a3ef1c"),
+
+					TxRawData:       hex_to_bytes("00003eb30321cdfeac00"),
+					SourceShip:      AzimuthNumber(567148204),
+					TargetShip:      AzimuthNumber(16051),
+					SourceProxyType: PROXY_OWNER,
+					Opcode:          OP_ESCAPE,
+					Flag:            false, // breach
+				},
+				{
+					Signature: hex_to_signature(
+						"594a127b1ea1a880de4c446971932d15b1b021ad13be5e09f98ebb71f45f06967f17bacca27" +
+							"d84b448ec5809c15ca48ff73d47a541e94be994ef774fe9b56ba01b"),
+					TxRawData:       hex_to_bytes("00003eb303beccfeac00"),
+					SourceShip:      AzimuthNumber(3201105580),
+					TargetShip:      AzimuthNumber(16051),
+					SourceProxyType: PROXY_OWNER,
+					Opcode:          OP_ESCAPE,
+					Flag:            false, // breach
+				},
+			},
+		},
 	}
 
 	for _, tc := range test_cases {
