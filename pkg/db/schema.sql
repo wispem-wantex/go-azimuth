@@ -1,5 +1,24 @@
 PRAGMA foreign_keys = on;
 
+
+-- =======
+-- DB meta
+-- =======
+
+create table db_version (
+	version integer
+);
+insert into db_version values(0);
+
+
+-- ============
+-- Azimuth data
+-- ============
+
+create table dns (rowid integer primary key,
+	text text
+);
+
 create table points (
 	azimuth_number integer primary key, -- @p
 
@@ -17,7 +36,7 @@ create table points (
 	dominion integer not null default 1,
 	is_active bool not null default 0,
 	life integer not null default 0, -- How many times networking keys have been reset (starts at 1 on initializing keys)
-	rift integer not null default 0, -- How many times the ship has breached (starts at 0)
+	rift integer not null default 0, -- How many times the point has breached (starts at 0)
 	crypto_suite_version integer not null default 0, -- version of the crypto suite used for the pubkeys
 	auth_key blob not null default X'',  -- Authentication public key
 	encryption_key blob not null default X'', -- Encryption public key
@@ -29,48 +48,36 @@ create table points (
 	escape_requested_to integer not null default 0 -- @p
 );
 create view readable_points as
-	select
-    azimuth_number,
-    lower(hex(owner_address)) as owner_address,
-    owner_nonce,
-    lower(hex(spawn_address)) as spawn_address,
-    spawn_nonce,
-    lower(hex(management_address)) as management_address,
-    management_nonce,
-    lower(hex(voting_address)) as voting_address,
-    voting_nonce,
-    lower(hex(transfer_address)) as transfer_address,
-    transfer_nonce,
-    dominion,
-    is_active,
-    life,
-    rift,
-    crypto_suite_version,
-    lower(hex(auth_key)) as auth_key,
-    lower(hex(encryption_key)) as encryption_key,
-    has_sponsor,
-    sponsor,
-    is_escape_requested,
-    escape_requested_to
-from points;
+	select azimuth_number,
+	       lower(hex(owner_address)) as owner_address,
+	       owner_nonce,
+	       lower(hex(spawn_address)) as spawn_address,
+	       spawn_nonce,
+	       lower(hex(management_address)) as management_address,
+	       management_nonce,
+	       lower(hex(voting_address)) as voting_address,
+	       voting_nonce,
+	       lower(hex(transfer_address)) as transfer_address,
+	       transfer_nonce,
+	       dominion,
+	       is_active,
+	       life,
+	       rift,
+	       crypto_suite_version,
+	       lower(hex(auth_key)) as auth_key,
+	       lower(hex(encryption_key)) as encryption_key,
+	       has_sponsor,
+	       sponsor,
+	       is_escape_requested,
+	       escape_requested_to
+	  from points;
 
-create table operators (rowid integer primary key,
-	owner_address blob not null check (length(owner_address) = 20),
-	authorized_operator_address blob not null check (length(authorized_operator_address) = 20),
 
-	unique (owner_address, authorized_operator_address)
-);
 
-create table dns (rowid integer primary key,
-	text text
-);
+-- =============
+-- Ethereum data
+-- =============
 
--- =======================
--- Ethereum tracking state
--- =======================
-
-------
--- Contracts that we are tracking
 create table contracts (rowid integer primary key,
 	address blob not null unique collate nocase check (length(address) = 20),
 	name text not null,
@@ -81,8 +88,6 @@ insert into contracts (address, name, start_block) values
 	(X'223c067f8cf28ae173ee5cafea60ca44c335fecb', 'Azimuth', 6784880),
 	(X'eb70029cfb3c53c778eaf68cd28de725390a1fe9', 'Naive', 13369829);
 
-------
--- Valid event types from the contracts we are tracking
 create table event_types (rowid integer primary key,
 	contract_address blob not null collate nocase check (length(contract_address) = 20),
 	hashed_name blob unique not null,
@@ -92,7 +97,10 @@ create table event_types (rowid integer primary key,
 	foreign key(contract_address) references contracts(address)
 );
 create view readable_event_types as  -- write the blob in hex format
-	select "0x" || lower(hex(contract_address)), lower(hex(hashed_name)), name from event_types;
+	select "0x" || lower(hex(contract_address)),
+	       lower(hex(hashed_name)),
+	       name
+	  from event_types;
 insert into event_types (contract_address,hashed_name,name) values
 	(X'223c067f8cf28ae173ee5cafea60ca44c335fecb',X'e74c03809d0769e1b1f706cc8414258cd1f3b6fe020cd15d0165c210ba503a0f','Activated'),
 	(X'223c067f8cf28ae173ee5cafea60ca44c335fecb',X'b2d3a6e7a339f5c8ff96265e2f03a010a8541070f3744a247090964415081546','Spawned'),
@@ -110,9 +118,7 @@ insert into event_types (contract_address,hashed_name,name) values
 	(X'223c067f8cf28ae173ee5cafea60ca44c335fecb',X'fafd04ade1daae2e1fdb0fc1cc6a899fd424063ed5c92120e67e073053b94898','ChangedDns'),
 	(X'eb70029cfb3c53c778eaf68cd28de725390a1fe9',X'cca739c72762deed05941b38d4aa82f2718c74457d5e2d8c5b1d7642caf22196','Batch');
 
-------
--- Ethereum event logs
-create table event_logs (rowid integer primary key,
+create table ethereum_events (rowid integer primary key,
 	block_number integer not null,
 	block_hash blob not null,
 	tx_hash blob not null,
@@ -129,11 +135,18 @@ create table event_logs (rowid integer primary key,
 	unique(block_number, log_index)
 	foreign key(contract_address, topic0) references event_types(contract_address, hashed_name)
 );
-create index index_event_logs_is_processed on event_logs(is_processed);
-create view readable_event_logs as
-	select block_number, lower(hex(block_hash)) hex_block_hash, lower(hex(tx_hash)) hex_tx_hash, log_index, "0x" || lower(hex(event_logs.contract_address)) hex_contract_address, name, lower(hex(topic0)) hex_topic0, lower(hex(topic1)) hex_topic1, lower(hex(topic2)) hex_topic2, lower(hex(data)) hex_data, is_processed from event_logs join event_types on topic0 = hashed_name;
-
-create table db_version (
-	version integer
-);
-insert into db_version values(0);
+create index index_ethereum_events_is_processed on ethereum_events(is_processed);
+create view readable_ethereum_events as
+	select block_number,
+	       lower(hex(block_hash)) hex_block_hash,
+	       lower(hex(tx_hash)) hex_tx_hash,
+	       log_index,
+	       "0x" || lower(hex(ethereum_events.contract_address)) hex_contract_address,
+	       name,
+	       lower(hex(topic0)) hex_topic0,
+	       lower(hex(topic1)) hex_topic1,
+	       lower(hex(topic2)) hex_topic2,
+	       lower(hex(data)) hex_data,
+	       is_processed
+	  from ethereum_events
+	  join event_types on topic0 = hashed_name;

@@ -70,7 +70,8 @@ type Query struct {
 	BindValues interface{}
 }
 
-type AzimuthEventLog struct {
+type EthereumEventLog struct {
+	ID          uint64      `db:"rowid"`
 	BlockNumber uint64      `db:"block_number"`
 	BlockHash   common.Hash `db:"block_hash"`
 	TxHash      common.Hash `db:"tx_hash"`
@@ -86,10 +87,10 @@ type AzimuthEventLog struct {
 	IsProcessed bool `db:"is_processed"`
 }
 
-func (db *DB) SaveEvent(e AzimuthEventLog) {
+func (db *DB) SaveEvent(e EthereumEventLog) {
 	fmt.Printf("%#v\n", e)
 	_, err := db.DB.NamedExec(`
-		insert into event_logs (
+		insert into ethereum_events (
 			            block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1, topic2, data, is_processed
 			        ) values (
 			            :block_number, :block_hash, :tx_hash, :log_index, :contract_address, :topic0, :topic1, :topic2, :data,
@@ -102,8 +103,8 @@ func (db *DB) SaveEvent(e AzimuthEventLog) {
 }
 
 // Either create a new event, or add in the Naive Batch data after the fact
-func (db *DB) SmuggleNaiveBatchDataIntoEvent(e AzimuthEventLog) {
-	rslt, err := db.DB.NamedExec(`update event_logs set data=:data where block_number=:block_number and log_index=:log_index`, e)
+func (db *DB) SmuggleNaiveBatchDataIntoEvent(e EthereumEventLog) {
+	rslt, err := db.DB.NamedExec(`update ethereum_events set data=:data where block_number=:block_number and log_index=:log_index`, e)
 	if err != nil {
 		panic(err)
 	}
@@ -117,12 +118,12 @@ func (db *DB) SmuggleNaiveBatchDataIntoEvent(e AzimuthEventLog) {
 }
 
 func (db *DB) PlayAzimuthLogs() {
-	var events []AzimuthEventLog
+	var events []EthereumEventLog
 	for {
 		// Batches of 500
 		err := db.DB.Select(&events, `
 		    select block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
-		            topic2, data, is_processed from event_logs
+		            topic2, data, is_processed from ethereum_events
 		     where contract_address = X'223c067f8cf28ae173ee5cafea60ca44c335fecb' and is_processed = 0
 		  order by block_number, log_index asc
 		     limit 500
@@ -137,7 +138,7 @@ func (db *DB) PlayAzimuthLogs() {
 	}
 }
 
-func (db *DB) ApplyEventEffects(events []AzimuthEventLog) {
+func (db *DB) ApplyEventEffects(events []EthereumEventLog) {
 	tx, err := db.DB.Begin()
 	if err != nil {
 		panic(err)
@@ -157,7 +158,11 @@ func (db *DB) ApplyEventEffects(events []AzimuthEventLog) {
 			}
 		}
 
-		_, err = db.DB.NamedExec(`update event_logs set is_processed=1 where block_number = :block_number and log_index = :log_index`, e)
+		_, err = db.DB.NamedExec(`
+			update ethereum_events
+			   set is_processed=1
+			 where block_number = :block_number and log_index = :log_index`,
+			e)
 		if err != nil {
 			if err := tx.Rollback(); err != nil {
 				panic(err)
@@ -182,7 +187,7 @@ func topic_to_eth_address(h common.Hash) common.Address {
 	return common.BytesToAddress(h[:])
 }
 
-func (e AzimuthEventLog) Effects() Query {
+func (e EthereumEventLog) Effects() Query {
 	switch e.Topic0 {
 	case SPAWNED:
 		p := Point{

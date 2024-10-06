@@ -43,7 +43,7 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 	}
 
 	// To get Tx data, we have to use batching; otherwise, turbo slow
-	processed_logs := []AzimuthEventLog{}
+	processed_logs := []EthereumEventLog{}
 
 	// First, save the Ethereum logs
 	for _, l := range logs {
@@ -59,7 +59,7 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 			fmt.Println(hex.EncodeToString(l.Data))
 		}
 
-		azimuth_event_log := ParseAzimuthLog(l)
+		azimuth_event_log := ParseEthereumLog(l)
 		if azimuth_event_log.Name == "" {
 			// Probably an Ecliptic log
 			fmt.Println("Skipping event due to empty name (assuming it's an Ecliptic log)")
@@ -77,7 +77,7 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 }
 
 // Get transaction data (call-data) for Batch events, in batches (yes)
-func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []AzimuthEventLog, apply_txs bool) {
+func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEventLog, apply_txs bool) {
 	// Callback function to execute RPC batches
 	do_batched_rpc := func(batch []rpc.BatchElem) []*types.Transaction {
 		if err := client.Client().BatchCall(batch); err != nil {
@@ -115,7 +115,7 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []AzimuthEven
 		// Prepare a batch for RPC-ing
 		batch := []rpc.BatchElem{}
 		// Index to let us map back from tx hash to update the logs
-		logs_by_txhash := make(map[common.Hash]AzimuthEventLog)
+		logs_by_txhash := make(map[common.Hash]EthereumEventLog)
 		for _, l := range logs[i:ii] {
 			batch = append(batch,
 				rpc.BatchElem{
@@ -147,6 +147,6 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []AzimuthEven
 
 	if apply_txs {
 		panic("TODO")
-		// db.ApplyEventEffects([]AzimuthEventLog{azimuth_event_log})
+		// db.ApplyEventEffects([]EthereumEventLog{azimuth_event_log})
 	}
 }

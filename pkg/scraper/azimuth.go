@@ -55,8 +55,8 @@ func check_error(err error) (int64, bool) {
 }
 
 // Convert it to Our Type, with sanity checks
-func ParseAzimuthLog(l types.Log) AzimuthEventLog {
-	event := AzimuthEventLog{
+func ParseEthereumLog(l types.Log) EthereumEventLog {
+	event := EthereumEventLog{
 		BlockNumber: l.BlockNumber,
 		BlockHash:   l.BlockHash,
 		TxHash:      l.TxHash,
@@ -118,14 +118,14 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB, apply_logs bool) {
 				fmt.Println(hex.EncodeToString(l.Data))
 			}
 
-			azimuth_event_log := ParseAzimuthLog(l)
+			azimuth_event_log := ParseEthereumLog(l)
 			if azimuth_event_log.Name == "" {
 				// Probably an Ecliptic log
 				continue
 			}
 			db.SaveEvent(azimuth_event_log)
 			if apply_logs {
-				db.ApplyEventEffects([]AzimuthEventLog{azimuth_event_log})
+				db.ApplyEventEffects([]EthereumEventLog{azimuth_event_log})
 			}
 		}
 
