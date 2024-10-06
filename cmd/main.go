@@ -52,7 +52,7 @@ func main() {
 			panic(err)
 		}
 		catch_up_logs(*with_apply)
-	case "play_logs":
+	case "play_logs_azimuth":
 		play_logs()
 	case "query":
 		query(args[1])
