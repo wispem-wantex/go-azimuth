@@ -93,7 +93,7 @@ func (tx NaiveTx) VerifySignature(source_ship_point Point) bool {
 		proxy_nonce = source_ship_point.TransferNonce
 	}
 	nonce_bytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(nonce_bytes, proxy_nonce)
+	binary.LittleEndian.PutUint32(nonce_bytes, proxy_nonce)
 
 	reverse := func(b []byte) []byte {
 		newSlice := make([]byte, len(b))

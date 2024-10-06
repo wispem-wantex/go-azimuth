@@ -154,6 +154,23 @@ func TestCheckNaiveSignatures(t *testing.T) {
 				OwnerAddress: common.HexToAddress("46b24384f42c324e71b60e7a5c24ad20ee6faa20"),
 			},
 		},
+		{
+			// Signature with non-zero nonce
+			Tx: NaiveTx{
+				Signature: hex_to_signature(
+					"cc9dba6a6c90616dac53c1cff8e224e02ce9601fcec85c68f73a77bb5970354a523842d5335d847" +
+						"f0f76c95b7cbb735f0847b0e22c9040da1dd1ed3ac4c2b09900"),
+				TxRawData:       hex_to_bytes("bad132bf9c1269ee4fbc3affc537d3de3adb169b0001fbea010000fbea00"),
+				SourceShip:      AzimuthNumber(64490),
+				SourceProxyType: PROXY_OWNER,
+				Opcode:          OP_SPAWN,
+				TargetShip:      AzimuthNumber(130026),
+			},
+			Sender: Point{
+				OwnerAddress: common.HexToAddress("baD132Bf9c1269ee4fBc3AFfC537d3De3Adb169B"),
+				OwnerNonce:   1,
+			},
+		},
 	}
 	for _, tc := range test_cases {
 		rslt := tc.Tx.VerifySignature(tc.Sender)
