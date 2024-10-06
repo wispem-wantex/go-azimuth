@@ -1,7 +1,10 @@
 package db
 
 import (
+	"bytes"
+	"database/sql"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -48,7 +51,7 @@ type NaiveTx struct {
 	Flag               bool
 	EncryptionKey      []byte
 	AuthKey            []byte
-	CryptoSuiteVersion uint
+	CryptoSuiteVersion uint32
 }
 
 // 1. Fetch the source ship+proxy's address and nonce
@@ -152,6 +155,98 @@ func (tx NaiveTx) VerifySignature(source_ship_point Point) bool {
 	return address == proxy_address
 }
 
+// Play all events (both azimuth and naive) since the start of the Naive contract.
+//
+// WTF(naive-azimuth-interlacing): Naive does not actually "happen after" Azimuth.  For example, consider the
+// following scenario.  An L1 star can sponsor an L2 planet.  After using a certain proxy to adopt
+// an escaping L2 planet (L2 tx), the L1 star could change their proxy address on L1.  The L2 tx
+// is valid, but if it was processed after all L1 txs, the processing would see the new proxy
+// address and incorrectly consider the L2 tx invalid.
+//
+// So L1 and L2 txs have to actually be processed in order, interleaving between the two.
+func (db *DB) PlayNaiveLogs() {
+	var events []EthereumEventLog
+	for {
+		err := db.DB.Select(&events, `
+		    select block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
+		            topic2, data, is_processed from ethereum_events
+		     where is_processed = 0
+		  order by block_number, log_index asc
+		`)
+		if err != nil {
+			panic(err)
+		} else if len(events) == 0 {
+			// No unprocessed logs left; we're finished
+			break
+		}
+		for _, e := range events {
+			if e.ContractAddress == common.HexToAddress("eb70029cfb3c53c778eaf68cd28de725390a1fe9") {
+				// Naive
+				fmt.Printf("===================== naive batch\n")
+				db.ApplyBatchEvent(e)
+			} else {
+				// Azimuth
+				db.ApplyEventEffects([]EthereumEventLog{e})
+			}
+		}
+	}
+}
+
+func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
+	if event.Topic0 != BATCH {
+		panic(event)
+	}
+	fmt.Printf("Data: %x\n\n", event.Data)
+	naive_txs := ParseNaiveBatch(event.Data)
+
+	for i, tx := range naive_txs {
+		fmt.Printf("--------------------- naive tx %d\n", i)
+		fmt.Printf("Tx: %x%x\n", tx.TxRawData, tx.Signature)
+		fmt.Printf("%#v\n", tx)
+
+		var p Point
+		err := db.DB.Get(&p, `select * from points where azimuth_number = ?`, tx.SourceShip)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("\tPoint: %#v\n", p)
+		// fmt.Printf("Signature: %x\n", tx.Signature)
+		// fmt.Printf("TxRawData: %x\n", tx.TxRawData)
+		// fmt.Printf("SourceShip: %d\n", tx.SourceShip)
+		// fmt.Printf("SourceProxyType: %d\n", tx.SourceProxyType)
+		// fmt.Printf("Opcode: %d\n", tx.Opcode)
+		// fmt.Printf("TargetShip: %d\n", tx.TargetShip)
+		// fmt.Printf("TargetAddress: %x\n", tx.TargetAddress)
+		// fmt.Printf("Flag: %t\n", tx.Flag)
+		// fmt.Printf("EncryptionKey: %x\n", tx.EncryptionKey)
+		// fmt.Printf("AuthKey: %x\n", tx.AuthKey)
+		// fmt.Printf("CryptoSuiteVersion: %d\n", tx.CryptoSuiteVersion)
+		// Check signature
+		if !tx.VerifySignature(p) {
+			fmt.Printf("\n>>>   Signature failed to verify in batch (%d, %d): %#v\n", event.BlockNumber, event.LogIndex, tx)
+			continue
+		}
+
+		// Get effects
+		for _, q := range tx.Effects(db) {
+			fmt.Printf("%q; %#v\n", q.SQL, q.BindValues)
+			_, err = db.DB.NamedExec(q.SQL, q.BindValues)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+	_, err := db.DB.NamedExec(`
+		update ethereum_events
+		   set is_processed=1
+		 where block_number = :block_number and log_index = :log_index`,
+		event)
+	if err != nil {
+		panic(err)
+	}
+}
+
 // 1. Reverse the byte slice
 // 2. 65 bytes => signature
 // 3. 1 byte => proxy type (incl. owner)
@@ -190,76 +285,432 @@ func (tx NaiveTx) VerifySignature(source_ship_point Point) bool {
 func ParseNaiveBatch(batch []byte) []NaiveTx {
 	ret := []NaiveTx{}
 
+	ship_from_bytes := func(b []byte) AzimuthNumber {
+		padded_bytes := make([]byte, 4)
+		copy(padded_bytes[4-len(b):], b) // Right-align the bytes in a 4-byte array
+		return AzimuthNumber(binary.BigEndian.Uint32(padded_bytes))
+	}
+
 	i := int(len(batch))
 	var j int
 	for i > 0 {
 		tx := NaiveTx{}
 
 		i, j = i-65, i
-		copy(tx.Signature[:65], batch[i:j])
+		copy(tx.Signature[:65], batch[max(0, i):j])
 		tx_mark := i // Set a mark so after parsing we can set the whole TxRawData bytes
 
 		i, _ = i-1, i
-		tx.SourceProxyType = uint(batch[i])
+		tx.SourceProxyType = uint(batch[max(0, i)])
 
 		i, j = i-4, i
-		tx.SourceShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+		tx.SourceShip = AzimuthNumber(binary.BigEndian.Uint32(batch[max(0, i):j]))
 		// fmt.Printf("Ship: ~%s\n", phonemes.IntToPhoneme(ship))
 
 		i, _ = i-1, i
-		tx.Opcode = 0x7f & uint(batch[i])
-		flag := (batch[i] >> 7) == 0
+		tx.Opcode = 0x7f & uint(batch[max(0, i)])
+		flag := (batch[max(0, i)] >> 7) == 0
 		switch tx.Opcode {
 		case OP_TRANSFER_POINT:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 			tx.Flag = flag // reset
 		case OP_SPAWN:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[max(0, i):j]))
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		case OP_CONFIGURE_KEYS:
 			i, j = i-32, i
-			tx.EncryptionKey = batch[i:j]
+			tx.EncryptionKey = batch[max(0, i):j]
 
 			i, j = i-32, i
-			tx.AuthKey = batch[i:j]
+			tx.AuthKey = batch[max(0, i):j]
 
-			// WTF: if this is the last tx in the batch, leading "0x00"s could be chopped off
 			i, _ = i-4, i //
-			tx.CryptoSuiteVersion = uint(batch[max(0, i)])
+			tx.CryptoSuiteVersion = uint32(batch[max(0, i)])
 			tx.Flag = flag // breach
 		case OP_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
 		case OP_CANCEL_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
 		case OP_ADOPT:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
 		case OP_REJECT:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
 		case OP_DETACH:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[i:j]))
+			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
 		case OP_SET_MANAGEMENT_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		case OP_SET_SPAWN_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		case OP_SET_TRANSFER_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[i:j])
+			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
 		}
 
-		// Handling for CryptoSuiteVersion being unpadded for some reason
+		// WTF: if this is the last tx in the batch, leading "0x00"s could be omitted from the
+		// batch data, but they have to be added back in for the signatures to validate!
+		// This is because the Hoon implementation processes batch data as atoms, which have
+		// infinite (implicit) preceeding zeroes.
 		padding_length := -min(0, i) // If `i` is negative, add `-i` bytes of padding
 		tx.TxRawData = append(make([]byte, padding_length), batch[max(0, i):tx_mark]...)
 		ret = append(ret, tx)
+	}
+	return ret
+}
+
+func (tx NaiveTx) Effects(db *DB) []Query {
+	var p Point
+	err := db.DB.Get(&p, `select * from points where azimuth_number = ?`, tx.SourceShip)
+	if err != nil {
+		panic(err)
+	}
+
+	ret := []Query{}
+
+	// Increment the appropriate nonce, even if the transaction doesn't apply properly
+	// If the raw-tx parses properly, then we want to avoid people re-broadcasting it
+	increment_nonce_query := Query{BindValues: p}
+	switch tx.SourceProxyType {
+	case PROXY_OWNER:
+		increment_nonce_query.SQL = "update points set owner_nonce=owner_nonce+1 where azimuth_number = :azimuth_number"
+	case PROXY_SPAWN:
+		increment_nonce_query.SQL = "update points set spawn_nonce=spawn_nonce+1 where azimuth_number = :azimuth_number"
+	case PROXY_MANAGEMENT:
+		increment_nonce_query.SQL = "update points set management_nonce=management_nonce+1 where azimuth_number = :azimuth_number"
+	case PROXY_VOTING:
+		increment_nonce_query.SQL = "update points set voting_nonce=voting_nonce+1 where azimuth_number = :azimuth_number"
+	case PROXY_TRANSFER:
+		increment_nonce_query.SQL = "update points set transfer_nonce=transfer_nonce+1 where azimuth_number = :azimuth_number"
+	}
+	ret = append(ret, increment_nonce_query)
+
+	// Apply the transaction.
+	// We have to do a lot more validation here than on L1 since there's no smart contract to make
+	// guarantees for us.
+	switch tx.Opcode {
+	case OP_TRANSFER_POINT:
+		// 1. Assert SourceShip is on L2
+		// 2. Assert SourceProxyType is permitted, either "owner" or "transfer proxy"
+		if p.Dominion != 2 || (tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_TRANSFER) {
+			break
+		}
+
+		// 3. Update owner address; zero out transfer address
+		p.OwnerAddress = tx.TargetAddress
+		p.TransferAddress = common.Address{}
+
+		// 4. If reset is requested
+		if tx.Flag {
+			// 1. If p.Life is not 0: increment p.Rift (out of order in naive.hoon, for simplicity)
+			if p.Life != 0 {
+				p.Rift += 1
+			}
+			// 2. if p.Suite, p.Auth and p.Encrypt are not all 0, set them to 0x0000...0000 and increment p.Life
+			if p.CryptoSuiteVersion != 0 ||
+				!bytes.Equal(p.AuthKey, make([]byte, len(p.AuthKey))) ||
+				!bytes.Equal(p.EncryptionKey, make([]byte, len(p.EncryptionKey))) {
+				p.Life += 1
+			}
+			p.CryptoSuiteVersion = 0
+			p.AuthKey = []byte{}
+			p.EncryptionKey = []byte{}
+			// 3. Set p.SpawnAddress, p.ManagementAddress, p.VotingAddress and p.TransferAddress = 0x0000...0000
+			p.SpawnAddress = common.Address{}
+			p.ManagementAddress = common.Address{}
+			p.VotingAddress = common.Address{}
+			p.TransferAddress = common.Address{}
+		}
+
+		// 5. Save the result
+		ret = append(ret,
+			Query{`
+				update points
+				   set owner_address = :owner_address,
+				       transfer_address = :transfer_address,
+				       life = :life,
+				       rift = :rift,
+				       crypto_suite_version = :crypto_suite_version,
+				       auth_key = :auth_key,
+				       encryption_key = :encryption_key,
+				       spawn_address = :spawn_address,
+				       management_address = :management_address,
+				       voting_address = :voting_address,
+				       transfer_address = :transfer_address
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+	case OP_SPAWN:
+		// TargetShip is the ship getting spawned; TargetAddress is who will be the new owner
+		// 3. Assert the transaction's SourceShip (sender) is the natural parent of TargetShip
+		if tx.SourceShip != tx.TargetShip.Parent() {
+			break
+		}
+		// 2. Assert tx.SourceShip is on L2 or Spawn dominion
+		if p.Dominion != 2 && p.Dominion != 3 {
+			break
+		}
+		// 4. Assert the SourceProxyType is permitted, either "owner" or "spawn proxy"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_SPAWN {
+			break
+		}
+		// 5. Assert the TargetShip isn't spawned yet (not in points map, in naive.hoon)
+		var target Point
+		err = db.DB.Get(&target, `select * from points where azimuth_number = ?`, tx.TargetShip)
+		if err == nil {
+			// Row found; point already exists
+			break
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			// Unexpected error
+			panic(err)
+		}
+
+		// 6. Create a new Point with sponsor=SourceShip and dominion=L2
+		new_point := Point{
+			Number:     tx.TargetShip,
+			HasSponsor: true,
+			Sponsor:    tx.SourceShip,
+			Dominion:   2,
+		}
+		// 7. If SourceProxyType is "owner" and TargetAddress matches OwnerAddress, or likewise for
+		// "spawn proxy", take ownership of it immediately (set p.OwnerAddress=TargetAddress)
+		//    Otherwise:
+		//    - p.OwnerAddress = parent.OwnerAddress;
+		//    - p.TransferAddress = TargetAddress
+		if tx.SourceProxyType == PROXY_OWNER && tx.TargetAddress == p.OwnerAddress ||
+			tx.SourceProxyType == PROXY_SPAWN && tx.TargetAddress == p.SpawnAddress {
+			new_point.OwnerAddress = tx.TargetAddress
+		} else {
+			new_point.OwnerAddress = p.OwnerAddress
+			new_point.TransferAddress = tx.TargetAddress
+		}
+
+		// 8. Save the new point
+		ret = append(ret,
+			Query{`
+				insert into points (azimuth_number, owner_address, transfer_address, has_sponsor, sponsor, dominion)
+				            values (:azimuth_number, :owner_address, :transfer_address, :has_sponsor, :sponsor, :dominion)`,
+				new_point,
+			})
+	case OP_CONFIGURE_KEYS:
+		// 1. Assert SourceShip is on L2
+		if p.Dominion != 2 {
+			break
+		}
+		// 2. Assert SourceProxyType is permitted, either "owner" or "management proxy"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			break
+		}
+
+		// 3. if p.Flag (breach): increment p.Rift
+		if tx.Flag {
+			p.Rift += 1
+		}
+		// 4. if p.Suite, p.Auth and p.Encrypt don't already match the new values, increment p.Life
+		if p.CryptoSuiteVersion != tx.CryptoSuiteVersion ||
+			!bytes.Equal(p.EncryptionKey, tx.EncryptionKey) ||
+			!bytes.Equal(p.AuthKey, tx.AuthKey) {
+			p.Life += 1
+		}
+		// 5. set p.Suite = tx.Suite, p.Auth = tx.Auth, p.Encrypt = tx.Encrypt
+		p.CryptoSuiteVersion = tx.CryptoSuiteVersion
+		p.AuthKey = tx.AuthKey
+		p.EncryptionKey = tx.EncryptionKey
+
+		// 6. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set rift = :rift,
+				       life = :life,
+				       crypto_suite_version = :crypto_suite_version,
+				       auth_key = :auth_key,
+				       encryption_key = :encryption_key
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+	case OP_ESCAPE:
+		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			break
+		}
+		// 2. Assert ranks match: TargetShip should be 1 rank higher than SourceShip
+		if tx.TargetShip.Rank() != tx.SourceShip.Rank()+1 {
+			break
+		}
+		// 3. Apply escape request
+		p.IsEscapeRequested = true
+		p.EscapeRequestedTo = tx.TargetShip
+		// 4. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set is_escape_requested = :is_escape_requested,
+				       escape_requested_to = :escape_requested_to
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+	case OP_CANCEL_ESCAPE:
+		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			break
+		}
+		// 2. Apply escape cancellation
+		p.IsEscapeRequested = false
+		p.EscapeRequestedTo = 0
+		// 3. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set is_escape_requested = :is_escape_requested,
+				       escape_requested_to = :escape_requested_to
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+	case OP_ADOPT:
+		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			break
+		}
+		// 2. Assert p.EscapeRequestedTo = tx.TargetShip
+		if p.EscapeRequestedTo != tx.TargetShip {
+			break
+		}
+		// 3. Apply the adoption
+		p.IsEscapeRequested = false
+		p.EscapeRequestedTo = 0
+		p.HasSponsor = true
+		p.Sponsor = tx.TargetShip
+		// 4. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set is_escape_requested = :is_escape_requested,
+				       escape_requested_to = :escape_requested_to,
+				       has_sponsor = :has_sponsor,
+				       sponsor = :sponsor
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+	case OP_REJECT:
+		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			break
+		}
+		// 2. Assert p.EscapeRequestedTo = tx.TargetShip
+		if p.EscapeRequestedTo != tx.TargetShip {
+			break
+		}
+		// 3. Apply the rejection
+		p.IsEscapeRequested = false
+		p.EscapeRequestedTo = 0
+		// 4. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set is_escape_requested = :is_escape_requested,
+				       escape_requested_to = :escape_requested_to
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+	case OP_DETACH:
+		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			break
+		}
+		// 2. Assert p.Sponsor = tx.TargetShip
+		if p.Sponsor != tx.TargetShip {
+			break
+		}
+		// 3. Apply the detachment
+		p.HasSponsor = false
+		p.Sponsor = 0
+
+		// 4. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set has_sponsor = :has_sponsor,
+				       sponsor = :sponsor
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+
+	case OP_SET_MANAGEMENT_PROXY:
+		// 1. Assert SourceShip is on L2
+		if p.Dominion != 2 {
+			break
+		}
+		// 2. Assert SourceProxyType is permitted, either "owner" or "management"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			break
+		}
+
+		// 3. Update the proxy
+		p.ManagementAddress = tx.TargetAddress
+		// 4. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set management_address = :management_address
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+
+	case OP_SET_SPAWN_PROXY:
+		// 1. Assert SourceShip is on L2 or "Spawn" dominion
+		if p.Dominion != 2 && p.Dominion != 3 {
+			break
+		}
+		// 2. Assert SourceProxyType is permitted, either "owner" or "spawn"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_SPAWN {
+			break
+		}
+		// 3. Assert SourceShip is either a star or a galaxy (planets can't spawn)
+		if tx.SourceShip.Rank() == PLANET {
+			break
+		}
+		// 4. Update the proxy
+		p.SpawnAddress = tx.TargetAddress
+		// 5. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set spawn_address = :spawn_address
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+
+	case OP_SET_TRANSFER_PROXY:
+		// 1. Assert SourceShip is on L2
+		if p.Dominion != 2 {
+			break
+		}
+		// 2. Assert SourceProxyType is permitted, either "owner" or "transfer"
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_TRANSFER {
+			break
+		}
+		// 3. Update the proxy
+		p.TransferAddress = tx.TargetAddress
+		// 4. Save the point
+		ret = append(ret,
+			Query{`
+				update points
+				   set transfer_address = :transfer_address
+				 where azimuth_number = :azimuth_number`,
+				p,
+			})
+
+	default:
+		panic(tx.Opcode)
 	}
 	return ret
 }

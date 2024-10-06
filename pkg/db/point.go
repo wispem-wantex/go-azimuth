@@ -9,7 +9,41 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+type AzimuthRank uint
+
+const (
+	GALAXY = AzimuthRank(iota)
+	STAR
+	PLANET
+	MOON
+	COMET
+)
+
 type AzimuthNumber uint32
+
+// Get the natural parent of an Azimuth point.
+func (p AzimuthNumber) Parent() AzimuthNumber {
+	if p > 0xffff {
+		// Planets' parent is their star
+		return p & 0xffff
+	} else if p > 0xff {
+		// Stars' parent is their galaxy
+		return p & 0xff
+	}
+	// Galaxies don't have a parent
+	return 0
+}
+
+// Get the "rank" of an Azimuth point
+func (p AzimuthNumber) Rank() AzimuthRank {
+	if p < 0xff {
+		return GALAXY
+	} else if p <= 0xffff {
+		return STAR
+	} else {
+		return PLANET
+	}
+}
 
 type Point struct {
 	Number AzimuthNumber `db:"azimuth_number"`

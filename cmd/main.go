@@ -45,7 +45,7 @@ func main() {
 	}
 
 	switch args[0] {
-	case "get_logs":
+	case "get_logs_azimuth":
 		flags := flag.NewFlagSet("", flag.ExitOnError)
 		with_apply := flags.Bool("apply-logs", false, "whether to apply the logs immediately as they're fetched (default no)")
 		if err := flags.Parse(args[1:]); err != nil {
@@ -58,6 +58,8 @@ func main() {
 		query(args[1])
 	case "get_logs_naive":
 		catch_up_logs_naive()
+	case "play_logs_naive":
+		play_naive_logs()
 	default:
 		fmt.Printf("invalid subcommand: %q\n", args[0])
 		os.Exit(1)
@@ -89,6 +91,10 @@ func catch_up_logs_naive() {
 func play_logs() {
 	db := get_db(DB_PATH)
 	db.PlayAzimuthLogs()
+}
+func play_naive_logs() {
+	db := get_db(DB_PATH)
+	db.PlayNaiveLogs()
 }
 
 func query(urbit_id string) {

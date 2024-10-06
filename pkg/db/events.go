@@ -117,14 +117,19 @@ func (db *DB) SmuggleNaiveBatchDataIntoEvent(e EthereumEventLog) {
 	}
 }
 
+// Play Azimuth logs until the first Naive tx.
+//
+// WTF(naive-azimuth-interlacing): Note that L1 and L2 txs actually do have to be
+// processed in-order; the L1 does not "happen before" the L2, as I had previously believed.
 func (db *DB) PlayAzimuthLogs() {
 	var events []EthereumEventLog
 	for {
-		// Batches of 500
+		// Batches of 500.  Go until the Naive contract starts
 		err := db.DB.Select(&events, `
 		    select block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
 		            topic2, data, is_processed from ethereum_events
 		     where contract_address = X'223c067f8cf28ae173ee5cafea60ca44c335fecb' and is_processed = 0
+		       and block_number < (select start_block from contracts where name like 'Naive')
 		  order by block_number, log_index asc
 		     limit 500
 		`)
