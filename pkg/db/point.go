@@ -2,7 +2,10 @@ package db
 
 import (
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -36,6 +39,24 @@ type Point struct {
 	Sponsor           AzimuthNumber `db:"sponsor"`
 	IsEscapeRequested bool          `db:"is_escape_requested"`
 	EscapeRequestedTo AzimuthNumber `db:"escape_requested_to"`
+}
+
+func (p Point) MarshalJSON() ([]byte, error) {
+	type Alias Point
+
+	result, err := json.Marshal(&struct {
+		EncryptionKey string `json:"EncryptionKey"`
+		AuthKey       string `json:"AuthKey"`
+		Alias
+	}{
+		EncryptionKey: hex.EncodeToString(p.EncryptionKey),
+		AuthKey:       hex.EncodeToString(p.AuthKey),
+		Alias:         (Alias)(p),
+	})
+	if err != nil {
+		err = fmt.Errorf("encoding json: %w", err)
+	}
+	return result, err
 }
 
 func (db DB) GetPoint(azimuth_number AzimuthNumber) (Point, bool) {

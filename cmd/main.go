@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -96,7 +97,7 @@ func query(urbit_id string) {
 		fmt.Printf("Not a valid phoneme: %q\n", urbit_id)
 		os.Exit(1)
 	}
-	fmt.Printf("Querying point %d\n", point)
+	println(fmt.Sprintf("Querying point %d\n", point))
 
 	db := get_db(DB_PATH)
 	result, is_found := db.GetPoint(pkg_db.AzimuthNumber(point))
@@ -104,6 +105,10 @@ func query(urbit_id string) {
 		fmt.Printf("Point not found!\n")
 		os.Exit(2)
 	} else {
-		fmt.Printf("%#v\n", result)
+		data, err := json.Marshal(result)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(string(data))
 	}
 }
