@@ -106,11 +106,12 @@ create table diffs (rowid integer primary key,
 create view readable_diffs as
 	select diffs.rowid rowid,
 	       contracts.name contract,
-	       source_event_log_id,
+	       lower(hex(ethereum_events.tx_hash)) tx_hash,
 	       intra_log_index,
+	       source_event_log_id,
 	       azimuth_number,
 	       diff_types.name operation,
-	       hex(diffs.data) hex_data
+	       lower(hex(diffs.data)) hex_data
 	  from diffs
 	  join diff_types on diffs.operation = diff_types.rowid
 	  join ethereum_events on ethereum_events.rowid = source_event_log_id

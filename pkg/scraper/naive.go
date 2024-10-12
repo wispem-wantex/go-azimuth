@@ -87,8 +87,7 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 		ret := []*types.Transaction{} // Has to be pointer type to avoid copying an atomic.Pointer
 		for _, elem := range batch {
 			if elem.Error != nil {
-				log.Printf("Error fetching transaction: %v", elem.Error)
-				continue
+				panic(fmt.Sprintf("%#v (%#v)", elem, elem.Error))
 			}
 
 			tx, is_ok := elem.Result.(*types.Transaction)
@@ -96,7 +95,6 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 				panic(elem.Result)
 			}
 			fmt.Printf("Transaction Hash: %s\n", tx.Hash().Hex())
-			fmt.Printf("Data: %x\n", tx.Data()) // Call data
 			fmt.Println("------------------------------------------------")
 			ret = append(ret, tx)
 		}

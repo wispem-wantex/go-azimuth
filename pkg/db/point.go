@@ -103,3 +103,24 @@ func (db DB) GetPoint(azimuth_number AzimuthNumber) (Point, bool) {
 	}
 	return ret, true
 }
+
+type PointHistory struct {
+	ID               uint64        `db:"rowid"`
+	ContractName     string        `db:"contract"`
+	TxHash           string        `db:"tx_hash"`
+	SourceEventLogID uint64        `db:"source_event_log_id"`
+	IntraLogIndex    uint64        `db:"intra_log_index"`
+	AzimuthNumber    AzimuthNumber `db:"azimuth_number"`
+	OperationName    string        `db:"operation"`
+	HexData          string        `db:"hex_data"`
+}
+
+func (db DB) GetEventsForPoint(azimuth_number AzimuthNumber) (ret []PointHistory, is_ok bool) {
+	err := db.DB.Select(&ret, `select * from readable_diffs where azimuth_number = ?`, azimuth_number)
+	if errors.Is(err, sql.ErrNoRows) {
+		return []PointHistory{}, false
+	} else if err != nil {
+		panic(err)
+	}
+	return ret, true
+}

@@ -56,6 +56,8 @@ func main() {
 		play_logs()
 	case "query":
 		query(args[1])
+	case "show_logs":
+		show_logs(args[1])
 	case "get_logs_naive":
 		catch_up_logs_naive()
 	case "play_logs_naive":
@@ -121,6 +123,28 @@ func query(urbit_id string) {
 			panic(err)
 		}
 		fmt.Println(string(data))
+	}
+}
+
+func show_logs(urbit_id string) {
+	point, is_ok := phonemes.PhonemeToInt(urbit_id)
+	if !is_ok {
+		fmt.Printf("Not a valid phoneme: %q\n", urbit_id)
+		os.Exit(1)
+	}
+	db := get_db(DB_PATH)
+	result, is_found := db.GetEventsForPoint(pkg_db.AzimuthNumber(point))
+	if !is_found {
+		fmt.Printf("Point not found!\n")
+		os.Exit(2)
+	}
+
+	// Header
+	fmt.Printf("%-7s  %-7s  %-64s  %-3s  %-24s  %s\n", "ID", "Layer", "Tx Hash", "Idx", "Operation", "Data")
+	fmt.Printf("-------  -------  ----------------------------------------------------------------  ---  ------------------------  ----\n")
+	for _, h := range result {
+		fmt.Printf("%-7d  %-7s  %-64s  %-3d  %-24s  %s\n",
+			h.ID, h.ContractName, h.TxHash, h.IntraLogIndex, h.OperationName, h.HexData)
 	}
 }
 
