@@ -52,6 +52,7 @@ func TestParseNaiveBatch(t *testing.T) {
 					Opcode:          OP_SET_TRANSFER_PROXY,
 					TargetAddress:   common.Address(hex_to_bytes("671738dada5c209c12b6501e80c62e091c27b14a")),
 				}, {
+					IntraLogIndex: 1,
 					Signature: hex_to_signature("73fdca35f685fa61153a73bef738ebfbf4cf95cca253" +
 						"dd39343ad3ae287e156228693b06f7a66defb761109e1d3c3bc5be348c28b22ae272d83709ea8a9acf031c"),
 					TxRawData:       hex_to_bytes("671738dada5c209c12b6501e80c62e091c27b14a8022d601a204"),
@@ -106,6 +107,7 @@ func TestParseNaiveBatch(t *testing.T) {
 					TargetShip:      AzimuthNumber(16051),
 				},
 				{
+					IntraLogIndex: 1,
 					Signature: hex_to_signature(
 						"594a127b1ea1a880de4c446971932d15b1b021ad13be5e09f98ebb71f45f06967f17bacca27d84b448" +
 							"ec5809c15ca48ff73d47a541e94be994ef774fe9b56ba01b"),
@@ -117,10 +119,26 @@ func TestParseNaiveBatch(t *testing.T) {
 				},
 			},
 		},
+		{
+			// idk, another test case I suppose
+			hex_to_bytes("661803651AC018009399A8A143B21FCA343109128370BD9575B17F97BE491985D4932F309B4088BA5B" +
+				"9E2666ED5FF6322B0594AD31F6BD966B7D5A0B55738C43FA2E80517858F27C00"),
+			[]NaiveTx{
+				{
+					Signature: hex_to_signature("9399a8a143b21fca343109128370bd9575b17f97be491985d4932" +
+						"f309b4088ba5b9e2666ed5ff6322b0594ad31f6bd966b7d5a0b55738c43fa2e80517858f27c00"),
+					TxRawData:       hex_to_bytes("0000661803651ac01800"),
+					SourceShip:      AzimuthNumber(1696251928),
+					SourceProxyType: PROXY_OWNER,
+					Opcode:          OP_ESCAPE,
+					TargetShip:      AzimuthNumber(26136),
+				},
+			},
+		},
 	}
 
 	for _, tc := range test_cases {
-		rslt := ParseNaiveBatch(tc.Data)
+		rslt := ParseNaiveBatch(tc.Data, 0)
 		for i := range tc.Result {
 			assert.Equal(tc.Result[i], rslt[i])
 		}

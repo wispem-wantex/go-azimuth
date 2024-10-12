@@ -123,7 +123,7 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB, apply_logs bool) {
 				// Probably an Ecliptic log
 				continue
 			}
-			db.SaveEvent(azimuth_event_log)
+			db.SaveEvent(&azimuth_event_log)
 			if apply_logs {
 				db.ApplyEventEffects([]EthereumEventLog{azimuth_event_log})
 			}

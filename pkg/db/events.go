@@ -87,9 +87,9 @@ type EthereumEventLog struct {
 	IsProcessed bool `db:"is_processed"`
 }
 
-func (db *DB) SaveEvent(e EthereumEventLog) {
+func (db *DB) SaveEvent(e *EthereumEventLog) {
 	fmt.Printf("%#v\n", e)
-	_, err := db.DB.NamedExec(`
+	result, err := db.DB.NamedExec(`
 		insert into ethereum_events (
 			            block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1, topic2, data, is_processed
 			        ) values (
@@ -100,6 +100,13 @@ func (db *DB) SaveEvent(e EthereumEventLog) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Update the event's ID
+	new_id, err := result.LastInsertId()
+	if err != nil {
+		panic(err)
+	}
+	e.ID = uint64(new_id)
 }
 
 // Either create a new event, or add in the Naive Batch data after the fact
@@ -126,7 +133,7 @@ func (db *DB) PlayAzimuthLogs() {
 	for {
 		// Batches of 500.  Go until the Naive contract starts
 		err := db.DB.Select(&events, `
-		    select block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
+		    select rowid, block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
 		            topic2, data, is_processed from ethereum_events
 		     where contract_address = X'223c067f8cf28ae173ee5cafea60ca44c335fecb' and is_processed = 0
 		       and block_number < (select start_block from contracts where name like 'Naive')
@@ -150,8 +157,9 @@ func (db *DB) ApplyEventEffects(events []EthereumEventLog) {
 	}
 
 	for _, e := range events {
-		effects := e.Effects()
+		effects, diffs := e.Effects()
 
+		// Apply the query
 		if effects.SQL != "" {
 			_, err = db.DB.NamedExec(effects.SQL, effects.BindValues)
 			if err != nil {
@@ -163,6 +171,12 @@ func (db *DB) ApplyEventEffects(events []EthereumEventLog) {
 			}
 		}
 
+		// Save the diffs
+		for _, d := range diffs {
+			db.SaveDiff(d)
+		}
+
+		// Mark the event as processed
 		_, err = db.DB.NamedExec(`
 			update ethereum_events
 			   set is_processed=1
@@ -191,14 +205,25 @@ func topic_to_eth_address(h common.Hash) common.Address {
 	// Topics are 32 bytes; addresses are 20; so remove the first 12
 	return common.BytesToAddress(h[:])
 }
+func azimuth_number_to_data(u AzimuthNumber) []byte {
+	ret := make([]byte, 4)
+	binary.BigEndian.PutUint32(ret, uint32(u))
+	return ret
+}
 
-func (e EthereumEventLog) Effects() Query {
+func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
+	if topic_to_azimuth_number(e.Topic1) == 1696251928 {
+		fmt.Printf("Tiller Tolbus L1 event: %#v\n", e)
+	}
+
 	switch e.Topic0 {
 	case SPAWNED:
 		p := Point{
 			Number: topic_to_azimuth_number(e.Topic2),
 		}
-		return Query{`insert into points (azimuth_number) values (:azimuth_number)`, p}
+		return Query{`insert into points (azimuth_number) values (:azimuth_number)`, p},
+			[]AzimuthDiff{{SourceEventLogID: e.ID, IntraLogIndex: 0, AzimuthNumber: p.Number, Operation: DIFF_SPAWNED}}
+
 	case ACTIVATED:
 		p := Point{
 			Number:     topic_to_azimuth_number(e.Topic1),
@@ -219,8 +244,10 @@ func (e EthereumEventLog) Effects() Query {
 			        set is_active=:is_active,
 			            has_sponsor=:has_sponsor,
 			            sponsor=:sponsor`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{SourceEventLogID: e.ID, IntraLogIndex: 0, AzimuthNumber: p.Number, Operation: DIFF_ACTIVATED}}
+
 	case OWNER_CHANGED:
 		p := Point{
 			Number:       topic_to_azimuth_number(e.Topic1),
@@ -234,8 +261,15 @@ func (e EthereumEventLog) Effects() Query {
 				            values (:azimuth_number, :dominion)
 				on conflict do update
 				        set dominion=:dominion`,
-				p,
-			}
+					p,
+				},
+				[]AzimuthDiff{{
+					SourceEventLogID: e.ID,
+					IntraLogIndex:    0,
+					AzimuthNumber:    p.Number,
+					Operation:        DIFF_NEW_DOMINION,
+					Data:             []byte{2},
+				}}
 		} else {
 			return Query{`
 				insert into points (azimuth_number, owner_address)
@@ -243,8 +277,15 @@ func (e EthereumEventLog) Effects() Query {
 				on conflict do update
 				        set owner_address=:owner_address
 			          where dominion != 2`,
-				p,
-			}
+					p,
+				},
+				[]AzimuthDiff{{
+					SourceEventLogID: e.ID,
+					IntraLogIndex:    0,
+					AzimuthNumber:    p.Number,
+					Operation:        DIFF_CHANGED_OWNER,
+					Data:             p.OwnerAddress[:],
+				}}
 		}
 	case CHANGED_SPAWN_PROXY:
 		p := Point{
@@ -252,17 +293,27 @@ func (e EthereumEventLog) Effects() Query {
 			SpawnAddress: topic_to_eth_address(e.Topic2),
 		}
 		if p.Number <= 0xffff && p.SpawnAddress == L2_DEPOSIT_ADDRESS {
-			// Setting spawn proxy to the L2 deposit address represents migrating to the "Spawn" dominion.
-			// It's not a real / valid change of spawn proxy address.
+			// Setting spawn proxy to the L2 deposit address represents migrating to the "Spawn"
+			// dominion.  It's not a real / valid change of spawn proxy address.
 			// In the "spawn" dominion, the ship (star or galaxy) is on L1, but it spawns on L2.
+			//
+			// Ships on L2 can't update their spawn proxy on L1, so it's safe to assume that the
+			// ship is currently L1.
 			p.Dominion = 3 // "spawn" dominion; ship is on L1, but spawns on L2
 			return Query{`
 				insert into points (azimuth_number, dominion)
 				            values (:azimuth_number, :dominion)
 				on conflict do update
 				        set dominion=:dominion`,
-				p,
-			}
+					p,
+				},
+				[]AzimuthDiff{{
+					SourceEventLogID: e.ID,
+					IntraLogIndex:    0,
+					AzimuthNumber:    p.Number,
+					Operation:        DIFF_NEW_DOMINION,
+					Data:             []byte{3},
+				}}
 		} else {
 			// Actual change of spawn-proxy address
 			return Query{`
@@ -270,8 +321,15 @@ func (e EthereumEventLog) Effects() Query {
 				            values (:azimuth_number, :spawn_address)
 				on conflict do update
 				        set spawn_address=:spawn_address`,
-				p,
-			}
+					p,
+				},
+				[]AzimuthDiff{{
+					SourceEventLogID: e.ID,
+					IntraLogIndex:    0,
+					AzimuthNumber:    p.Number,
+					Operation:        DIFF_CHANGED_SPAWN_PROXY,
+					Data:             p.SpawnAddress[:],
+				}}
 		}
 	case CHANGED_TRANSFER_PROXY:
 		p := Point{
@@ -284,8 +342,15 @@ func (e EthereumEventLog) Effects() Query {
 			on conflict do update
 			        set transfer_address=:transfer_address
 			      where dominion != 2`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_CHANGED_TRANSFER_PROXY,
+				Data:             p.TransferAddress[:],
+			}}
 	case CHANGED_MANAGEMENT_PROXY:
 		p := Point{
 			Number:            topic_to_azimuth_number(e.Topic1),
@@ -297,8 +362,15 @@ func (e EthereumEventLog) Effects() Query {
 			on conflict do update
 			        set management_address=:management_address
 			      where dominion != 2`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_CHANGED_MANAGEMENT_PROXY,
+				Data:             p.ManagementAddress[:],
+			}}
 	case CHANGED_VOTING_PROXY:
 		p := Point{
 			Number:        topic_to_azimuth_number(e.Topic1),
@@ -310,8 +382,15 @@ func (e EthereumEventLog) Effects() Query {
 			on conflict do update
 			        set voting_address=:voting_address
 			      where dominion != 2`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_CHANGED_VOTING_PROXY,
+				Data:             p.VotingAddress[:],
+			}}
 	case ESCAPE_REQUESTED:
 		p := Point{
 			Number:            topic_to_azimuth_number(e.Topic1),
@@ -325,8 +404,15 @@ func (e EthereumEventLog) Effects() Query {
 			        set is_escape_requested=1,
 			            escape_requested_to=:escape_requested_to
 			      where dominion != 2`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_ESCAPE_REQUESTED,
+				Data:             azimuth_number_to_data(p.EscapeRequestedTo),
+			}}
 	case ESCAPE_CANCELED:
 		p := Point{
 			Number:            topic_to_azimuth_number(e.Topic1),
@@ -339,8 +425,15 @@ func (e EthereumEventLog) Effects() Query {
 			on conflict do update
 			        set is_escape_requested=0, escape_requested_to=0
 			      where dominion != 2`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_ESCAPE_CANCELED,
+				Data:             azimuth_number_to_data(p.EscapeRequestedTo),
+			}}
 	case ESCAPE_ACCEPTED:
 		// TODO: ignore event if new sponsor is L2 (not sure how this could happen, but it's in naive.hoon)
 		p := Point{
@@ -358,8 +451,15 @@ func (e EthereumEventLog) Effects() Query {
 		                escape_requested_to=:escape_requested_to,
 		                has_sponsor=:has_sponsor,
 		                sponsor=:sponsor`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_ESCAPE_ACCEPTED,
+				Data:             azimuth_number_to_data(p.EscapeRequestedTo),
+			}}
 	case LOST_SPONSOR:
 		// TODO: ignore event if lost sponsor (e.Topic2) isn't this point's sponsor
 		// TODO: ignore event if new sponsor is L2 (not sure how this could happen, but it's in naive.hoon)
@@ -372,8 +472,14 @@ func (e EthereumEventLog) Effects() Query {
 			            values (:azimuth_number, :has_sponsor)
 			on conflict do update
 			        set has_sponsor=:has_sponsor`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_LOST_SPONSOR,
+			}}
 	case BROKE_CONTINUITY:
 		p := Point{
 			Number: topic_to_azimuth_number(e.Topic1),
@@ -385,8 +491,14 @@ func (e EthereumEventLog) Effects() Query {
 			on conflict do update
 			        set rift=:rift
 			      where dominion != 2`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_BREACHED,
+			}}
 	case CHANGED_KEYS:
 		if len(e.Data) != 32*4 { // Four 32-byte EVM words
 			panic(len(e.Data))
@@ -398,7 +510,6 @@ func (e EthereumEventLog) Effects() Query {
 			CryptoSuiteVersion: binary.BigEndian.Uint32([]byte(e.Data[32*3-4 : 32*3])),
 			Life:               binary.BigEndian.Uint32([]byte(e.Data[32*4-4 : 32*4])),
 		}
-		fmt.Printf("CryptoSuiteVersion: %#v\n", p)
 		return Query{`
 			insert into points (azimuth_number, encryption_key, auth_key, crypto_suite_version, life)
 			            values (:azimuth_number, :encryption_key, :auth_key, :crypto_suite_version, :life)
@@ -408,10 +519,17 @@ func (e EthereumEventLog) Effects() Query {
 			            crypto_suite_version=:crypto_suite_version,
 			            life=:life
 			      where dominion != 2`,
-			p,
-		}
+				p,
+			},
+			[]AzimuthDiff{{
+				SourceEventLogID: e.ID,
+				IntraLogIndex:    0,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_RESET_KEYS,
+				Data:             e.Data,
+			}}
 	case CHANGED_DNS:
-		return Query{} // TODO
+		return Query{}, []AzimuthDiff{} // TODO
 	default:
 		panic(e.Topic0)
 	}

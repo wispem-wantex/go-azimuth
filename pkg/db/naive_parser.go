@@ -35,6 +35,8 @@ const (
 )
 
 type NaiveTx struct {
+	EthereumEventLogID uint64
+	IntraLogIndex      uint64
 	// Summary info
 	Signature [65]byte
 	TxRawData []byte // Includes the whole transaction aside from the signature
@@ -168,7 +170,7 @@ func (db *DB) PlayNaiveLogs() {
 	var events []EthereumEventLog
 	for {
 		err := db.DB.Select(&events, `
-		    select block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
+		    select rowid, block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1,
 		            topic2, data, is_processed from ethereum_events
 		     where is_processed = 0
 		  order by block_number, log_index asc
@@ -182,7 +184,6 @@ func (db *DB) PlayNaiveLogs() {
 		for _, e := range events {
 			if e.ContractAddress == common.HexToAddress("eb70029cfb3c53c778eaf68cd28de725390a1fe9") {
 				// Naive
-				fmt.Printf("===================== naive batch\n")
 				db.ApplyBatchEvent(e)
 			} else {
 				// Azimuth
@@ -196,21 +197,14 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 	if event.Topic0 != BATCH {
 		panic(event)
 	}
-	fmt.Printf("Data: %x\n\n", event.Data)
-	naive_txs := ParseNaiveBatch(event.Data)
-
-	for i, tx := range naive_txs {
-		fmt.Printf("--------------------- naive tx %d\n", i)
-		fmt.Printf("Tx: %x%x\n", tx.TxRawData, tx.Signature)
-		fmt.Printf("%#v\n", tx)
-
+	naive_txs := ParseNaiveBatch(event.Data, event.ID)
+	for _, tx := range naive_txs {
 		var p Point
 		err := db.DB.Get(&p, `select * from points where azimuth_number = ?`, tx.SourceShip)
 		if err != nil {
 			panic(err)
 		}
 
-		fmt.Printf("\tPoint: %#v\n", p)
 		// fmt.Printf("Signature: %x\n", tx.Signature)
 		// fmt.Printf("TxRawData: %x\n", tx.TxRawData)
 		// fmt.Printf("SourceShip: %d\n", tx.SourceShip)
@@ -229,12 +223,17 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 		}
 
 		// Get effects
-		for _, q := range tx.Effects(db) {
-			fmt.Printf("%q; %#v\n", q.SQL, q.BindValues)
+		effects, diffs := tx.Effects(db)
+		for _, q := range effects {
 			_, err = db.DB.NamedExec(q.SQL, q.BindValues)
 			if err != nil {
+				fmt.Printf("%q; %#v\n", q.SQL, q.BindValues)
 				panic(err)
 			}
+		}
+
+		for _, d := range diffs {
+			db.SaveDiff(d)
 		}
 	}
 	_, err := db.DB.NamedExec(`
@@ -282,7 +281,7 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 //     20 bytes => eth_address
 //   - 10 (set transfer proxy)
 //     20 bytes => eth_address
-func ParseNaiveBatch(batch []byte) []NaiveTx {
+func ParseNaiveBatch(batch []byte, ethereum_event_log_id uint64) []NaiveTx {
 	ret := []NaiveTx{}
 
 	ship_from_bytes := func(b []byte) AzimuthNumber {
@@ -291,10 +290,12 @@ func ParseNaiveBatch(batch []byte) []NaiveTx {
 		return AzimuthNumber(binary.BigEndian.Uint32(padded_bytes))
 	}
 
+	intra_log_index := uint64(0)
+
 	i := int(len(batch))
 	var j int
 	for i > 0 {
-		tx := NaiveTx{}
+		tx := NaiveTx{EthereumEventLogID: ethereum_event_log_id, IntraLogIndex: intra_log_index}
 
 		i, j = i-65, i
 		copy(tx.Signature[:65], batch[max(0, i):j])
@@ -363,18 +364,24 @@ func ParseNaiveBatch(batch []byte) []NaiveTx {
 		padding_length := -min(0, i) // If `i` is negative, add `-i` bytes of padding
 		tx.TxRawData = append(make([]byte, padding_length), batch[max(0, i):tx_mark]...)
 		ret = append(ret, tx)
+		intra_log_index += 1
 	}
 	return ret
 }
 
-func (tx NaiveTx) Effects(db *DB) []Query {
-	var p Point
-	err := db.DB.Get(&p, `select * from points where azimuth_number = ?`, tx.SourceShip)
-	if err != nil {
-		panic(err)
+func (tx NaiveTx) Effects(db *DB) ([]Query, []AzimuthDiff) {
+	// helper func
+	get_point := func(n AzimuthNumber) (ret Point) {
+		err := db.DB.Get(&ret, `select * from points where azimuth_number = ?`, n)
+		if err != nil {
+			panic(err)
+		}
+		return ret
 	}
+	p := get_point(tx.SourceShip)
 
 	ret := []Query{}
+	diffs := []AzimuthDiff{}
 
 	// Increment the appropriate nonce, even if the transaction doesn't apply properly
 	// If the raw-tx parses properly, then we want to avoid people re-broadcasting it
@@ -400,25 +407,53 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 	case OP_TRANSFER_POINT:
 		// 1. Assert SourceShip is on L2
 		// 2. Assert SourceProxyType is permitted, either "owner" or "transfer proxy"
-		if p.Dominion != 2 || (tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_TRANSFER) {
+		if p.Dominion != 2 {
+			fmt.Printf("Ignoring tx: source is not an L2 ship\n")
+			break
+		}
+		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_TRANSFER {
+			fmt.Printf("Ignoring tx: source proxy is not authorized to transfer\n")
 			break
 		}
 
 		// 3. Update owner address; zero out transfer address
 		p.OwnerAddress = tx.TargetAddress
 		p.TransferAddress = common.Address{}
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_CHANGED_OWNER,
+				Data:             p.OwnerAddress[:],
+			})
 
 		// 4. If reset is requested
 		if tx.Flag {
 			// 1. If p.Life is not 0: increment p.Rift (out of order in naive.hoon, for simplicity)
 			if p.Life != 0 {
 				p.Rift += 1
+				diffs = append(diffs,
+					AzimuthDiff{
+						SourceEventLogID: tx.EthereumEventLogID,
+						IntraLogIndex:    tx.IntraLogIndex,
+						AzimuthNumber:    p.Number,
+						Operation:        DIFF_BREACHED,
+					})
 			}
 			// 2. if p.Suite, p.Auth and p.Encrypt are not all 0, set them to 0x0000...0000 and increment p.Life
 			if p.CryptoSuiteVersion != 0 ||
 				!bytes.Equal(p.AuthKey, make([]byte, len(p.AuthKey))) ||
 				!bytes.Equal(p.EncryptionKey, make([]byte, len(p.EncryptionKey))) {
 				p.Life += 1
+				diffs = append(diffs,
+					AzimuthDiff{
+						SourceEventLogID: tx.EthereumEventLogID,
+						IntraLogIndex:    tx.IntraLogIndex,
+						AzimuthNumber:    p.Number,
+						Operation:        DIFF_RESET_KEYS,
+						Data:             []byte{},
+					})
 			}
 			p.CryptoSuiteVersion = 0
 			p.AuthKey = []byte{}
@@ -448,25 +483,30 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				 where azimuth_number = :azimuth_number`,
 				p,
 			})
+
 	case OP_SPAWN:
 		// TargetShip is the ship getting spawned; TargetAddress is who will be the new owner
 		// 3. Assert the transaction's SourceShip (sender) is the natural parent of TargetShip
 		if tx.SourceShip != tx.TargetShip.Parent() {
+			fmt.Printf("Ignoring tx: source is not target's parent to spawn it\n")
 			break
 		}
 		// 2. Assert tx.SourceShip is on L2 or Spawn dominion
 		if p.Dominion != 2 && p.Dominion != 3 {
+			fmt.Printf("Ignoring tx: source ship is on L1\n")
 			break
 		}
 		// 4. Assert the SourceProxyType is permitted, either "owner" or "spawn proxy"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_SPAWN {
+			fmt.Printf("Ignoring tx: source proxy is not authorized to spawn\n")
 			break
 		}
 		// 5. Assert the TargetShip isn't spawned yet (not in points map, in naive.hoon)
 		var target Point
-		err = db.DB.Get(&target, `select * from points where azimuth_number = ?`, tx.TargetShip)
+		err := db.DB.Get(&target, `select * from points where azimuth_number = ?`, tx.TargetShip)
 		if err == nil {
 			// Row found; point already exists
+			fmt.Printf("Ignoring tx: target ship is already spawned\n")
 			break
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			// Unexpected error
@@ -492,7 +532,13 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 			new_point.OwnerAddress = p.OwnerAddress
 			new_point.TransferAddress = tx.TargetAddress
 		}
-
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    new_point.Number,
+				Operation:        DIFF_SPAWNED,
+			})
 		// 8. Save the new point
 		ret = append(ret,
 			Query{`
@@ -503,22 +549,42 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 	case OP_CONFIGURE_KEYS:
 		// 1. Assert SourceShip is on L2
 		if p.Dominion != 2 {
+			fmt.Printf("Ignoring tx: source ship is not on L2\n")
 			break
 		}
 		// 2. Assert SourceProxyType is permitted, either "owner" or "management proxy"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
 
 		// 3. if p.Flag (breach): increment p.Rift
 		if tx.Flag {
 			p.Rift += 1
+			diffs = append(diffs,
+				AzimuthDiff{
+					SourceEventLogID: tx.EthereumEventLogID,
+					IntraLogIndex:    tx.IntraLogIndex,
+					AzimuthNumber:    p.Number,
+					Operation:        DIFF_BREACHED,
+				})
 		}
 		// 4. if p.Suite, p.Auth and p.Encrypt don't already match the new values, increment p.Life
 		if p.CryptoSuiteVersion != tx.CryptoSuiteVersion ||
 			!bytes.Equal(p.EncryptionKey, tx.EncryptionKey) ||
 			!bytes.Equal(p.AuthKey, tx.AuthKey) {
 			p.Life += 1
+
+			diff_data := append(make([]byte, 4), append(tx.AuthKey, tx.EncryptionKey...)...)
+			binary.BigEndian.PutUint32(diff_data[0:4], tx.CryptoSuiteVersion)
+			diffs = append(diffs,
+				AzimuthDiff{
+					SourceEventLogID: tx.EthereumEventLogID,
+					IntraLogIndex:    tx.IntraLogIndex,
+					AzimuthNumber:    p.Number,
+					Operation:        DIFF_RESET_KEYS,
+					Data:             diff_data,
+				})
 		}
 		// 5. set p.Suite = tx.Suite, p.Auth = tx.Auth, p.Encrypt = tx.Encrypt
 		p.CryptoSuiteVersion = tx.CryptoSuiteVersion
@@ -540,10 +606,14 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 	case OP_ESCAPE:
 		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
 		// 2. Assert ranks match: TargetShip should be 1 rank higher than SourceShip
-		if tx.TargetShip.Rank() != tx.SourceShip.Rank()+1 {
+		if tx.TargetShip.Rank()+1 != tx.SourceShip.Rank() {
+			fmt.Printf("Ignoring tx in event log %d: rank mismatch (%d/%d to %d/%d)\n",
+				tx.EthereumEventLogID, tx.TargetShip, tx.TargetShip.Rank(), tx.SourceShip, tx.SourceShip.Rank(),
+			)
 			break
 		}
 		// 3. Apply escape request
@@ -558,9 +628,18 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				 where azimuth_number = :azimuth_number`,
 				p,
 			})
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_ESCAPE_REQUESTED,
+				Data:             azimuth_number_to_data(p.EscapeRequestedTo),
+			})
 	case OP_CANCEL_ESCAPE:
 		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
 		// 2. Apply escape cancellation
@@ -575,20 +654,35 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				 where azimuth_number = :azimuth_number`,
 				p,
 			})
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_ESCAPE_CANCELED,
+				Data:             azimuth_number_to_data(p.EscapeRequestedTo),
+			})
 	case OP_ADOPT:
 		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
-		// 2. Assert p.EscapeRequestedTo = tx.TargetShip
-		if p.EscapeRequestedTo != tx.TargetShip {
+
+		target := get_point(tx.TargetShip)
+
+		// 2. Assert tx.TargetShip has requested escape to tx.SourceShip
+		if target.EscapeRequestedTo != tx.SourceShip {
+			fmt.Printf("Ignoring tx in event log %d: target ship %d wasn't trying to escape to %d\n",
+				tx.EthereumEventLogID, tx.TargetShip, tx.SourceShip,
+			)
 			break
 		}
 		// 3. Apply the adoption
-		p.IsEscapeRequested = false
-		p.EscapeRequestedTo = 0
-		p.HasSponsor = true
-		p.Sponsor = tx.TargetShip
+		target.IsEscapeRequested = false
+		target.EscapeRequestedTo = 0
+		target.HasSponsor = true
+		target.Sponsor = tx.SourceShip
 		// 4. Save the point
 		ret = append(ret,
 			Query{`
@@ -598,20 +692,35 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				       has_sponsor = :has_sponsor,
 				       sponsor = :sponsor
 				 where azimuth_number = :azimuth_number`,
-				p,
+				target,
+			})
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    target.Number,
+				Operation:        DIFF_ESCAPE_ACCEPTED,
+				Data:             azimuth_number_to_data(target.EscapeRequestedTo),
 			})
 	case OP_REJECT:
 		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
-		// 2. Assert p.EscapeRequestedTo = tx.TargetShip
-		if p.EscapeRequestedTo != tx.TargetShip {
+
+		target := get_point(tx.TargetShip)
+
+		// 2. Assert tx.TargetShip has requested escape to tx.SourceShip
+		if target.EscapeRequestedTo != tx.SourceShip {
+			fmt.Printf("Ignoring tx in event log %d: target ship %d wasn't trying to escape to %d\n",
+				tx.EthereumEventLogID, tx.TargetShip, tx.SourceShip,
+			)
 			break
 		}
 		// 3. Apply the rejection
-		p.IsEscapeRequested = false
-		p.EscapeRequestedTo = 0
+		target.IsEscapeRequested = false
+		target.EscapeRequestedTo = 0
 		// 4. Save the point
 		ret = append(ret,
 			Query{`
@@ -619,20 +728,35 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				   set is_escape_requested = :is_escape_requested,
 				       escape_requested_to = :escape_requested_to
 				 where azimuth_number = :azimuth_number`,
-				p,
+				target,
 			})
-	case OP_DETACH:
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    target.Number,
+				Operation:        DIFF_ESCAPE_REJECTED,
+				Data:             azimuth_number_to_data(target.EscapeRequestedTo),
+			})
+	case OP_DETACH: // Source ship (star) disavows target ship (planet)
 		// 1. Assert SourceProxyType is permitted, either "owner" or "management"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
-		// 2. Assert p.Sponsor = tx.TargetShip
-		if p.Sponsor != tx.TargetShip {
+
+		target := get_point(tx.TargetShip)
+
+		// 2. Assert source ship is currently the target's sponsor
+		if tx.SourceShip != target.Sponsor {
+			fmt.Printf("Ignoring tx in event log %d: source ship (%d) isn't target's (%d) sponsor\n",
+				tx.EthereumEventLogID, tx.SourceShip, tx.TargetShip,
+			)
 			break
 		}
 		// 3. Apply the detachment
-		p.HasSponsor = false
-		p.Sponsor = 0
+		target.HasSponsor = false
+		target.Sponsor = 0
 
 		// 4. Save the point
 		ret = append(ret,
@@ -641,16 +765,24 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				   set has_sponsor = :has_sponsor,
 				       sponsor = :sponsor
 				 where azimuth_number = :azimuth_number`,
-				p,
+				target,
 			})
-
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    target.Number,
+				Operation:        DIFF_LOST_SPONSOR,
+			})
 	case OP_SET_MANAGEMENT_PROXY:
 		// 1. Assert SourceShip is on L2
 		if p.Dominion != 2 {
+			fmt.Printf("Ignoring tx: source proxy is not on L2\n")
 			break
 		}
 		// 2. Assert SourceProxyType is permitted, either "owner" or "management"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_MANAGEMENT {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
 
@@ -664,14 +796,23 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				 where azimuth_number = :azimuth_number`,
 				p,
 			})
-
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_CHANGED_MANAGEMENT_PROXY,
+				Data:             p.ManagementAddress[:],
+			})
 	case OP_SET_SPAWN_PROXY:
 		// 1. Assert SourceShip is on L2 or "Spawn" dominion
 		if p.Dominion != 2 && p.Dominion != 3 {
+			fmt.Printf("Ignoring tx: source proxy is not on L2\n")
 			break
 		}
 		// 2. Assert SourceProxyType is permitted, either "owner" or "spawn"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_SPAWN {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
 		// 3. Assert SourceShip is either a star or a galaxy (planets can't spawn)
@@ -688,14 +829,23 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				 where azimuth_number = :azimuth_number`,
 				p,
 			})
-
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_CHANGED_SPAWN_PROXY,
+				Data:             p.SpawnAddress[:],
+			})
 	case OP_SET_TRANSFER_PROXY:
 		// 1. Assert SourceShip is on L2
 		if p.Dominion != 2 {
+			fmt.Printf("Ignoring tx: source proxy is not on L2\n")
 			break
 		}
 		// 2. Assert SourceProxyType is permitted, either "owner" or "transfer"
 		if tx.SourceProxyType != PROXY_OWNER && tx.SourceProxyType != PROXY_TRANSFER {
+			fmt.Printf("Ignoring tx: source proxy is not authorized\n")
 			break
 		}
 		// 3. Update the proxy
@@ -708,9 +858,16 @@ func (tx NaiveTx) Effects(db *DB) []Query {
 				 where azimuth_number = :azimuth_number`,
 				p,
 			})
-
+		diffs = append(diffs,
+			AzimuthDiff{
+				SourceEventLogID: tx.EthereumEventLogID,
+				IntraLogIndex:    tx.IntraLogIndex,
+				AzimuthNumber:    p.Number,
+				Operation:        DIFF_CHANGED_TRANSFER_PROXY,
+				Data:             p.TransferAddress[:],
+			})
 	default:
 		panic(tx.Opcode)
 	}
-	return ret
+	return ret, diffs
 }

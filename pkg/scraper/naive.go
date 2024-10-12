@@ -67,7 +67,7 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 		}
 
 		// Save it in the DB
-		db.SaveEvent(azimuth_event_log)
+		db.SaveEvent(&azimuth_event_log)
 
 		// Add it to the list of call-data to fetch
 		processed_logs = append(processed_logs, azimuth_event_log)

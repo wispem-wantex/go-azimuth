@@ -22,7 +22,7 @@ Implemented as a subcommands program.  Available subcommands:
 
 An Infura free account has a limit of 6 million "credits" per day.  Fetching the L1 is basically free; it takes about 30K-40K credits to fetch the whole thing, since it's all event logs that can be grouped in huge batches.  Fetching the L2 is far more expensive, costing about 400K credits.  This is because L2 data is stored in transaction call data, so the transactions have to be fetched by hash, one at a time.
 
-Downloading the whole thing should still cost less than 10% of an Infura free tier daily quota.
+Downloading the whole thing should still cost less than 10% of an Infura free tier daily credits quota.
 
 For convenience, snapshots will be provided:
 

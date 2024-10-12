@@ -73,6 +73,49 @@ create view readable_points as
 	  from points;
 
 
+-- =================================================================
+-- Intermediate representation; interpreted effects of Ethereum data
+-- =================================================================
+
+create table diff_types(rowid integer primary key,
+	name text not null unique
+);
+insert into diff_types (name) values
+	("spawn"),
+	("activated"),
+	("changed-owner"),
+	("changed-spawn-proxy"),
+	("changed-transfer-proxy"),
+	("changed-management-proxy"),
+	("changed-voting-proxy"),
+	("escape-requested"),
+	("escape-canceled"),
+	("escape-accepted"),
+	("escape-rejected"),
+	("lost-sponsor"),
+	("breached"),
+	("reset-keys"),
+	("new-dominion");
+create table diffs (rowid integer primary key,
+	source_event_log_id not null references ethereum_events(rowid),
+	intra_log_index not null default 0, -- for L2 event-logs which can contain multiple diffs
+	azimuth_number integer not null references points(azimuth_number),
+	operation integer not null references diff_types(rowid),
+	data blob not null default x''
+);
+create view readable_diffs as
+	select diffs.rowid rowid,
+	       contracts.name contract,
+	       source_event_log_id,
+	       intra_log_index,
+	       azimuth_number,
+	       diff_types.name operation,
+	       hex(diffs.data) hex_data
+	  from diffs
+	  join diff_types on diffs.operation = diff_types.rowid
+	  join ethereum_events on ethereum_events.rowid = source_event_log_id
+	  join contracts on contracts.address = ethereum_events.contract_address;
+
 
 -- =============
 -- Ethereum data
@@ -137,7 +180,8 @@ create table ethereum_events (rowid integer primary key,
 );
 create index index_ethereum_events_is_processed on ethereum_events(is_processed);
 create view readable_ethereum_events as
-	select block_number,
+	select ethereum_events.rowid as rowid,
+	       block_number,
 	       lower(hex(block_hash)) hex_block_hash,
 	       lower(hex(tx_hash)) hex_tx_hash,
 	       log_index,
