@@ -54,7 +54,7 @@ func (db *DB) SaveDiff(d AzimuthDiff) {
 }
 
 const (
-	DIFF_SPAWNED = iota + 1
+	DIFF_SPAWNED = uint(iota + 1)
 	DIFF_ACTIVATED
 	DIFF_CHANGED_OWNER
 	DIFF_CHANGED_SPAWN_PROXY

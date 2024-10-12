@@ -88,7 +88,6 @@ type EthereumEventLog struct {
 }
 
 func (db *DB) SaveEvent(e *EthereumEventLog) {
-	fmt.Printf("%#v\n", e)
 	result, err := db.DB.NamedExec(`
 		insert into ethereum_events (
 			            block_number, block_hash, tx_hash, log_index, contract_address, topic0, topic1, topic2, data, is_processed
@@ -212,10 +211,6 @@ func azimuth_number_to_data(u AzimuthNumber) []byte {
 }
 
 func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
-	if topic_to_azimuth_number(e.Topic1) == 1696251928 {
-		fmt.Printf("Tiller Tolbus L1 event: %#v\n", e)
-	}
-
 	switch e.Topic0 {
 	case SPAWNED:
 		p := Point{
@@ -483,7 +478,7 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 	case BROKE_CONTINUITY:
 		p := Point{
 			Number: topic_to_azimuth_number(e.Topic1),
-			Rift:   topic_to_uint32(e.Topic2),
+			Rift:   binary.BigEndian.Uint32(e.Data[len(e.Data)-4:]), // rift number is not indexed
 		}
 		return Query{`
 			insert into points (azimuth_number, rift)
@@ -498,6 +493,7 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				IntraLogIndex:    0,
 				AzimuthNumber:    p.Number,
 				Operation:        DIFF_BREACHED,
+				Data:             e.Data[len(e.Data)-4:],
 			}}
 	case CHANGED_KEYS:
 		if len(e.Data) != 32*4 { // Four 32-byte EVM words
