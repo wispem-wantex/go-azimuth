@@ -20,6 +20,31 @@ Implemented as a subcommands program.  Available subcommands:
 	Once logs have been downloaded and played, you can show the historical event logs for a given point
 
 
+# Compiling
+
+You will need:
+
+- Go 1.22 or later
+	- Download from here: https://go.dev/doc/install.  Unless you're on Alpine Linux v3.20 or later, in which case you can use `apk add go`.  Most other package managers have outdated versions of Go.
+- A C compiler
+	- Ubuntu: `apt install build-essential`
+	- Alpine: `apk add build-base`
+	- etc
+- SQLite3
+	- Ubuntu: `apt install sqlite3`
+	- Alpine: `apk add sqlite`
+	- etc
+
+Once you have Go, gcc and SQLite, compiling is just:
+
+```bash
+go build -o azimuth ./cmd
+```
+
+I like to call it `azimuth` or `azm`.  It's up to you of course.
+
+Compiling the dependencies might take a few minutes (like 5 mins), but you only have to do this once.
+
 ## Infura / Ethereum node info and snapshotting
 
 An Infura free account has a limit of 6 million "credits" per day.  Fetching the L1 is basically free; it takes about 30K-40K credits to fetch the whole thing, since it's all event logs that can be grouped in huge batches.  Fetching the L2 is far more expensive, costing about 400K credits.  This is because L2 data is stored in transaction call data, so the transactions have to be fetched by hash, one at a time.
@@ -43,13 +68,19 @@ After the two "get_logs_XXXX" commands, check that there's no panics (error stac
 # Compile it
 go build -o azimuth ./cmd  # You don't have to call it `azimuth`, it's up to you
 
-# Fetch the logs, L1 and L2.  You can pick any database filepath you want; I like `azimuth.db`.
-azimuth --db azimuth.db get_logs_azimuth # L1
-azimuth --db azimuth.db get_logs_naive   # L2
+ # You need an Ethereum RPC url.  Check infura.io for a free one if you want
+export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/<YOUR_API_KEY>
+
+# Fetch the logs, L1 and L2.
+# You can pick any database filepath you want; I like `azimuth.db`.  That's also the default,
+# so you can omit it if you like.
+azimuth --db azimuth.db get_logs_azimuth # Specify database file manually
+azimuth get_logs_naive                   # "azimuth.db" is the default, if you don't provide it
 
 # Play the logs
-azimuth --db azimuth.db play_logs_azimuth
-azimuth --db azimuth.db play_logs_naive
+# These don't print anything, and they take a few mins each.
+azimuth play_logs_azimuth
+azimuth play_logs_naive  # This will print some "Signature failed to verify"; it's OK
 ```
 
 ### Tip: speedup with an in-memory database file
@@ -70,6 +101,9 @@ sudo mount -t tmpfs -o size=500M tmpfs memory_dir
 azimuth --db memory_dir/azimuth.db get_logs_azimuth
 # ...etc
 
+# Vacuum the database, to collapse the `.db-shm` and `.db-wal` files
+sqlite memory_dir/azimuth.db "vacuum"
+
 # Copy the database out of the memory filesystem so you don't lose it on reboot
 cp memory_dir/azimuth.db .
 
@@ -78,3 +112,15 @@ sudo umount memory_dir
 ```
 
 Using this trick will make the whole thing 8-10 times faster.
+
+## Using it
+
+So far the main thing you can do with it once you've built a database is query it.  (Piping the output of `query` to `jq` makes it pretty-print the JSON.)
+
+```bash
+# Check ~wispem-wantex's Azimuth state
+./azimuth --db azimuth.db query wispem-wantex | jq
+
+# Show ~wispem-wantex's Azimuth event history
+./azimuth --db azimuth.db show_logs wispem-wantex
+```
