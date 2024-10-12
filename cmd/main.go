@@ -15,10 +15,7 @@ import (
 	"go-azimuth/pkg/scraper"
 )
 
-const (
-	INFURA_URL = "https://mainnet.infura.io/v3/%s"
-	API_KEY    = "55f4d583b84249a7a7227225fabbd754"
-)
+var ETHEREUM_RPC_URL = ""
 
 var DB_PATH = ""
 
@@ -33,8 +30,27 @@ func get_db(path string) pkg_db.DB {
 	return db
 }
 
+func require_eth_rpc_url() {
+	if ETHEREUM_RPC_URL == "" {
+		fmt.Printf(
+			"This command requires an ethereum RPC url.  You can provide one using the environment variable " +
+				"\"ETHEREUM_RPC_URL\", or with the '--eth-url' flag.\n\n" +
+				"You can get one for free at: https://www.infura.io\n\n" +
+				"Once you get an API key, do\n\n" +
+				"    export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/<YOUR_API_KEY>\n\n" +
+				"and then try running this command again.\n")
+		os.Exit(1)
+	}
+}
+
 func main() {
-	flag.StringVar(&DB_PATH, "db", "sample_data/azimuth.db", "")
+	if val, is_ok := os.LookupEnv("ETHEREUM_RPC_URL"); is_ok {
+		ETHEREUM_RPC_URL = val
+	}
+
+	flag.StringVar(&DB_PATH, "db", "azimuth.db", "database file")
+	flag.StringVar(&ETHEREUM_RPC_URL, "eth-url", ETHEREUM_RPC_URL,
+		"Ethereum node RPC URL (defaults to environment variable ETHEREUM_RPC_URL)")
 
 	flag.Parse()
 	args := flag.Args()
@@ -69,8 +85,10 @@ func main() {
 }
 
 func catch_up_logs() {
+	require_eth_rpc_url()
+
 	db := get_db(DB_PATH)
-	client, err := ethclient.Dial(fmt.Sprintf(INFURA_URL, API_KEY))
+	client, err := ethclient.Dial(ETHEREUM_RPC_URL)
 	if err != nil {
 		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
 	}
@@ -80,8 +98,10 @@ func catch_up_logs() {
 }
 
 func catch_up_logs_naive() {
+	require_eth_rpc_url()
+
 	db := get_db(DB_PATH)
-	client, err := ethclient.Dial(fmt.Sprintf(INFURA_URL, API_KEY))
+	client, err := ethclient.Dial(ETHEREUM_RPC_URL)
 	if err != nil {
 		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
 	}
