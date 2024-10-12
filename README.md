@@ -20,7 +20,7 @@ Implemented as a subcommands program.  Available subcommands:
 	Once logs have been downloaded and played, you can show the historical event logs for a given point
 
 
-# Compiling
+## Compiling
 
 You will need:
 
@@ -72,15 +72,15 @@ go build -o azimuth ./cmd  # You don't have to call it `azimuth`, it's up to you
 export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/<YOUR_API_KEY>
 
 # Fetch the logs, L1 and L2.
-# You can pick any database filepath you want; I like `azimuth.db`.  That's also the default,
-# so you can omit it if you like.
-azimuth --db azimuth.db get_logs_azimuth # Specify database file manually
-azimuth get_logs_naive                   # "azimuth.db" is the default, if you don't provide it
+# You can pick any database filepath you want; I like `azimuth.db`.  That's also the
+# default, so you can omit it if you like.
+./azimuth --db azimuth.db get_logs_azimuth # Specify database file manually
+./azimuth get_logs_naive                   # "azimuth.db" is the default if not provided
 
 # Play the logs
 # These don't print anything, and they take a few mins each.
-azimuth play_logs_azimuth
-azimuth play_logs_naive  # This will print some "Signature failed to verify"; it's OK
+./azimuth play_logs_azimuth
+./azimuth play_logs_naive  # This will print some "Signature failed to verify"; it's OK
 ```
 
 ### Tip: speedup with an in-memory database file
@@ -98,7 +98,7 @@ mkdir memory_dir
 sudo mount -t tmpfs -o size=500M tmpfs memory_dir
 
 # Run the commands from above
-azimuth --db memory_dir/azimuth.db get_logs_azimuth
+./azimuth --db memory_dir/azimuth.db get_logs_azimuth
 # ...etc
 
 # Vacuum the database, to collapse the `.db-shm` and `.db-wal` files
@@ -119,8 +119,8 @@ So far the main thing you can do with it once you've built a database is query i
 
 ```bash
 # Check ~wispem-wantex's Azimuth state
-./azimuth --db azimuth.db query wispem-wantex | jq
+./azimuth query wispem-wantex | jq
 
 # Show ~wispem-wantex's Azimuth event history
-./azimuth --db azimuth.db show_logs wispem-wantex
+./azimuth show_logs wispem-wantex
 ```
