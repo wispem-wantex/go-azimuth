@@ -60,6 +60,11 @@ func main() {
 		catch_up_logs_naive()
 	case "play_logs_naive":
 		play_naive_logs()
+	case "checkpoint":
+		if len(args) < 2 {
+			panic("Gotta provide a path to checkpoint into")
+		}
+		checkpoint(args[1])
 	default:
 		fmt.Printf("invalid subcommand: %q\n", args[0])
 		os.Exit(1)
@@ -117,4 +122,11 @@ func query(urbit_id string) {
 		}
 		fmt.Println(string(data))
 	}
+}
+
+func checkpoint(path string) {
+	db := get_db(DB_PATH)
+	fmt.Println("Vaccuuming")
+	db.DB.MustExec(`vacuum into ?`, path)
+	fmt.Println("Vaccuumed")
 }
