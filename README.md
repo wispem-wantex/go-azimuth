@@ -7,7 +7,7 @@ For more on the GAS stack, read: https://twitter.com/wispem_wantex/status/183735
 Implemented as a subcommands program.  Available subcommands:
 
 - get_logs_azimuth:
-	Download Azimuth logs since the smart contract was launched.  They can be applied in-place with the `--apply` flag, or without applying to create a snapshot of just the events
+	Download Azimuth logs since the smart contract was launched.
 - get_logs_naive:
 	Download the Naive logs since the smart contract was launched.
 - play_logs:

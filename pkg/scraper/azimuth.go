@@ -78,7 +78,7 @@ func ParseEthereumLog(l types.Log) EthereumEventLog {
 }
 
 // Fetches all Azimuth logs since the contract was deployed, in chunks.
-func CatchUpAzimuthLogs(client *ethclient.Client, db DB, apply_logs bool) {
+func CatchUpAzimuthLogs(client *ethclient.Client, db DB) {
 	latest_block, err := client.BlockNumber(context.Background())
 	if err != nil {
 		panic(err)
@@ -123,9 +123,6 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB, apply_logs bool) {
 				continue
 			}
 			db.SaveEvent(&azimuth_event_log)
-			if apply_logs {
-				db.ApplyEventEffects([]EthereumEventLog{azimuth_event_log})
-			}
 		}
 
 		// Compute next batch size adaptively

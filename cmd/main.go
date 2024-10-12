@@ -46,12 +46,7 @@ func main() {
 
 	switch args[0] {
 	case "get_logs_azimuth":
-		flags := flag.NewFlagSet("", flag.ExitOnError)
-		with_apply := flags.Bool("apply-logs", false, "whether to apply the logs immediately as they're fetched (default no)")
-		if err := flags.Parse(args[1:]); err != nil {
-			panic(err)
-		}
-		catch_up_logs(*with_apply)
+		catch_up_logs()
 	case "play_logs_azimuth":
 		play_logs()
 	case "query":
@@ -73,7 +68,7 @@ func main() {
 	}
 }
 
-func catch_up_logs(with_apply bool) {
+func catch_up_logs() {
 	db := get_db(DB_PATH)
 	client, err := ethclient.Dial(fmt.Sprintf(INFURA_URL, API_KEY))
 	if err != nil {
@@ -81,7 +76,7 @@ func catch_up_logs(with_apply bool) {
 	}
 	defer client.Close()
 
-	scraper.CatchUpAzimuthLogs(client, db, with_apply)
+	scraper.CatchUpAzimuthLogs(client, db)
 }
 
 func catch_up_logs_naive() {
