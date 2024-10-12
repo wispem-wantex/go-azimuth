@@ -284,10 +284,10 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 func ParseNaiveBatch(batch []byte, ethereum_event_log_id uint64) []NaiveTx {
 	ret := []NaiveTx{}
 
-	ship_from_bytes := func(b []byte) AzimuthNumber {
+	uint32_from_bytes := func(b []byte) uint32 {
 		padded_bytes := make([]byte, 4)
 		copy(padded_bytes[4-len(b):], b) // Right-align the bytes in a 4-byte array
-		return AzimuthNumber(binary.BigEndian.Uint32(padded_bytes))
+		return binary.BigEndian.Uint32(padded_bytes)
 	}
 
 	intra_log_index := uint64(0)
@@ -328,24 +328,24 @@ func ParseNaiveBatch(batch []byte, ethereum_event_log_id uint64) []NaiveTx {
 			i, j = i-32, i
 			tx.AuthKey = batch[max(0, i):j]
 
-			i, _ = i-4, i //
-			tx.CryptoSuiteVersion = uint32(batch[max(0, i)])
+			i, j = i-4, i //
+			tx.CryptoSuiteVersion = uint32_from_bytes(batch[max(0, i):j])
 			tx.Flag = flag // breach
 		case OP_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
 		case OP_CANCEL_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
 		case OP_ADOPT:
 			i, j = i-4, i
-			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
 		case OP_REJECT:
 			i, j = i-4, i
-			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
 		case OP_DETACH:
 			i, j = i-4, i
-			tx.TargetShip = ship_from_bytes(batch[max(0, i):j])
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
 		case OP_SET_MANAGEMENT_PROXY:
 			i, j = i-20, i
 			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])

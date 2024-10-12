@@ -8,6 +8,7 @@ import (
 )
 
 type AzimuthDiff struct {
+	ID               uint64        `db:"rowid"`
 	SourceEventLogID uint64        `db:"source_event_log_id"`
 	IntraLogIndex    uint64        `db:"intra_log_index"` // tx order inside an L2 batch
 	AzimuthNumber    AzimuthNumber `db:"azimuth_number"`

@@ -2,7 +2,6 @@ package scraper
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -106,17 +105,17 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB, apply_logs bool) {
 		}
 		// Process the logs
 		for _, l := range logs {
-			fmt.Println("----------")
-			fmt.Println("Log Block Number:", l.BlockNumber)
-			fmt.Printf(EVENT_NAMES[l.Topics[0]])
-			fmt.Printf("(")
-			for _, t := range l.Topics[1:] {
-				fmt.Print(t, ", ")
-			}
-			fmt.Printf(")\n")
-			if len(l.Data) != 0 {
-				fmt.Println(hex.EncodeToString(l.Data))
-			}
+			// fmt.Println("----------")
+			// fmt.Println("Log Block Number:", l.BlockNumber)
+			// fmt.Printf(EVENT_NAMES[l.Topics[0]])
+			// fmt.Printf("(")
+			// for _, t := range l.Topics[1:] {
+			// 	fmt.Print(t, ", ")
+			// }
+			// fmt.Printf(")\n")
+			// if len(l.Data) != 0 {
+			// 	fmt.Println(hex.EncodeToString(l.Data))
+			// }
 
 			azimuth_event_log := ParseEthereumLog(l)
 			if azimuth_event_log.Name == "" {

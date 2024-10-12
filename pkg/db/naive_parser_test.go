@@ -135,6 +135,26 @@ func TestParseNaiveBatch(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Crypto suite versions-- should not be 0
+			hex_to_bytes("000000010A56E0A92352BF6723E518122DCE95A0EAAFBA3B3028B8806D5E7AD6AC56FF1E6A753FC18CC" +
+				"1BA858A4F344A164098247B607482812D6D5F75A8987EF62F9F3D82651AC018004962588F587083D2044965626440C" +
+				"B2281FE6DD413CF4F9EA90587BB98444DE5473DFF657EB3B0D6E03B67FA6367C483543AD7C2C8B678FF96A05E071B2F680200"),
+			[]NaiveTx{
+				{
+					Signature: hex_to_signature("4962588f587083d2044965626440cb2281fe6dd413cf4f9ea90587" +
+						"bb98444de5473dff657eb3b0d6e03b67fa6367c483543ad7c2c8b678ff96a05e071b2f680200"),
+					TxRawData: hex_to_bytes("000000010a56e0a92352bf6723e518122dce95a0eaafba3b3028b8806d" +
+						"5e7ad6ac56ff1e6a753fc18cc1ba858a4f344a164098247b607482812d6d5f75a8987ef62f9f3d82651ac01800"),
+					SourceShip:         AzimuthNumber(1696251928),
+					SourceProxyType:    PROXY_OWNER,
+					Opcode:             OP_CONFIGURE_KEYS,
+					EncryptionKey:      hex_to_bytes("6a753fc18cc1ba858a4f344a164098247b607482812d6d5f75a8987ef62f9f3d"),
+					AuthKey:            hex_to_bytes("0a56e0a92352bf6723e518122dce95a0eaafba3b3028b8806d5e7ad6ac56ff1e"),
+					CryptoSuiteVersion: 1,
+				},
+			},
+		},
 	}
 
 	for _, tc := range test_cases {
