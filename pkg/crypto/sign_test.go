@@ -25,7 +25,7 @@ func TestVeinToCrub(t *testing.T) {
 
 	crub := vein.ToCrub()
 	assert.Equal(hex_to_bytes("712f2fa71eac637ccd5d5bdd73229f7b85a61a89facb90573fc9623a895f3f00"), crub.EncryptKeys.Secret[:])
-	// assert.Equal(hex_to_bytes("5d3c62f5ce6738533944364e7639b8f84121760e72eeaaf2b22d5436c4bb36b4"), crub.EncryptKeys.Secret[:])
+	assert.Equal(hex_to_bytes("5d3c62f5ce6738533944364e7639b8f84121760e72eeaaf2b22d5436c4bb36b4"), crub.EncryptKeys.Pub[:])
 	assert.Equal(hex_to_bytes("aed1f34e1480677c465626694e25e7b65afdc6e8d69fd8b4ceee64bd6f4870d8"), crub.SignKeys.Secret[:])
 	assert.Equal(hex_to_bytes("b81aa63451cc3374a1d4a988262229d9041a0f2d62318e4ecec76c5b07df82fa"), crub.SignKeys.Pub[:])
 }
