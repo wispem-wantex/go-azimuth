@@ -197,6 +197,7 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 	if event.Topic0 != BATCH {
 		panic(event)
 	}
+
 	naive_txs := ParseNaiveBatch(event.Data, event.ID)
 	for _, tx := range naive_txs {
 		var p Point
@@ -205,17 +206,6 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 			panic(err)
 		}
 
-		// fmt.Printf("Signature: %x\n", tx.Signature)
-		// fmt.Printf("TxRawData: %x\n", tx.TxRawData)
-		// fmt.Printf("SourceShip: %d\n", tx.SourceShip)
-		// fmt.Printf("SourceProxyType: %d\n", tx.SourceProxyType)
-		// fmt.Printf("Opcode: %d\n", tx.Opcode)
-		// fmt.Printf("TargetShip: %d\n", tx.TargetShip)
-		// fmt.Printf("TargetAddress: %x\n", tx.TargetAddress)
-		// fmt.Printf("Flag: %t\n", tx.Flag)
-		// fmt.Printf("EncryptionKey: %x\n", tx.EncryptionKey)
-		// fmt.Printf("AuthKey: %x\n", tx.AuthKey)
-		// fmt.Printf("CryptoSuiteVersion: %d\n", tx.CryptoSuiteVersion)
 		// Check signature
 		if !tx.VerifySignature(p) {
 			fmt.Printf("\n>>>   Signature failed to verify in batch (%d, %d): %#v\n", event.BlockNumber, event.LogIndex, tx)

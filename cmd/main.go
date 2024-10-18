@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	"go-azimuth/pkg/crypto"
 	pkg_db "go-azimuth/pkg/db"
 	"go-azimuth/pkg/phonemes"
 	"go-azimuth/pkg/scraper"
@@ -78,6 +82,21 @@ func main() {
 			panic("Gotta provide a path to checkpoint into")
 		}
 		checkpoint(args[1])
+	case "store_key":
+		if len(args) < 3 {
+			panic("Gotta provide a ship and a key")
+		}
+		store_key(args[1], args[2])
+	case "sign":
+		if len(args) < 3 {
+			panic("Gotta provide a ship or crubfile")
+		}
+		sign(args[1], args[2])
+	case "verify":
+		if len(args) < 4 {
+			panic("Gotta provide: ship, signature, message")
+		}
+		verify(args[1], args[2], args[3])
 	default:
 		fmt.Printf("invalid subcommand: %q\n", args[0])
 		os.Exit(1)
@@ -122,7 +141,7 @@ func play_naive_logs() {
 func query(urbit_id string) {
 	point, is_ok := phonemes.PhonemeToInt(urbit_id)
 	if !is_ok {
-		fmt.Printf("Not a valid phoneme: %q\n", urbit_id)
+		fmt.Printf("Not a valid ship name: %q\n", urbit_id)
 		os.Exit(1)
 	}
 	println(fmt.Sprintf("Querying point %d\n", point))
@@ -144,7 +163,7 @@ func query(urbit_id string) {
 func show_logs(urbit_id string) {
 	point, is_ok := phonemes.PhonemeToInt(urbit_id)
 	if !is_ok {
-		fmt.Printf("Not a valid phoneme: %q\n", urbit_id)
+		fmt.Printf("Not a valid ship name: %q\n", urbit_id)
 		os.Exit(1)
 	}
 	db := get_db(DB_PATH)
@@ -168,4 +187,117 @@ func checkpoint(path string) {
 	fmt.Println("Vaccuuming")
 	db.DB.MustExec(`vacuum into ?`, path)
 	fmt.Println("Vaccuumed")
+}
+
+func store_key(urbit_id string, key_hex string) {
+	point, is_ok := phonemes.PhonemeToInt(urbit_id)
+	if !is_ok {
+		fmt.Printf("Not a valid ship name: %q\n", urbit_id)
+		os.Exit(1)
+	}
+	db := get_db(DB_PATH)
+	result, is_found := db.GetPoint(pkg_db.AzimuthNumber(point))
+	if !is_found {
+		fmt.Printf("Point not found!\n")
+		os.Exit(2)
+	}
+
+	vein := crypto.UrbitVeinFromHex(key_hex)
+	crub := vein.ToCrub()
+	// Check the crub for validity
+	if !bytes.Equal(crub.SignKeys.Pub[:], result.AuthKey) {
+		fmt.Printf("Signing keys don't match:\n - expect: %x\n - actual: %x\n", result.AuthKey, crub.SignKeys.Pub)
+	}
+	if !bytes.Equal(crub.EncryptKeys.Pub[:], result.EncryptionKey) {
+		fmt.Printf("Encrypt keys don't match:\n - expect: %x\n - actual: %x\n", result.EncryptionKey, crub.EncryptKeys.Pub)
+	}
+
+	// Save the crub
+	file, err := os.Create(fmt.Sprintf("%s.crub", urbit_id))
+	if err != nil {
+		panic(err)
+	}
+	jsondata, err := json.Marshal(crub)
+	if err != nil {
+		panic(err)
+	}
+	_, err = file.Write(jsondata)
+	if err != nil {
+		panic(err)
+	}
+	err = file.Close()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func load_crubfile(urbit_id string) crypto.UrbitCrub {
+	point, is_ok := phonemes.PhonemeToInt(urbit_id)
+	if !is_ok {
+		fmt.Printf("Not a valid ship name: %q\n", urbit_id)
+		os.Exit(1)
+	}
+	db := get_db(DB_PATH)
+	result, is_found := db.GetPoint(pkg_db.AzimuthNumber(point))
+	if !is_found {
+		fmt.Printf("Point not found!\n")
+		os.Exit(2)
+	}
+
+	file, err := os.Open(fmt.Sprintf("%s.crub", urbit_id))
+	if err != nil {
+		panic(err)
+	}
+	jsondata, err := io.ReadAll(file)
+	if err != nil {
+		panic(err)
+	}
+	var crub crypto.UrbitCrub
+	err = json.Unmarshal(jsondata, &crub)
+	if err != nil {
+		panic(err)
+	}
+	// Check the crub for validity
+	if !bytes.Equal(crub.SignKeys.Pub[:], result.AuthKey) {
+		fmt.Printf("Signing keys don't match:\n - expect: %x\n - actual: %x\n", result.AuthKey, crub.SignKeys.Pub)
+	}
+	if !bytes.Equal(crub.EncryptKeys.Pub[:], result.EncryptionKey) {
+		fmt.Printf("Encrypt keys don't match:\n - expect: %x\n - actual: %x\n", result.EncryptionKey, crub.EncryptKeys.Pub)
+	}
+	return crub
+}
+
+func sign(urbit_id string, msg string) {
+	crub := load_crubfile(urbit_id)
+	signature := crub.Sign([]byte(msg))
+	fmt.Printf("%x  %s\n", signature, msg)
+}
+func hex_to_bytes(s string) []byte {
+	data, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+func verify(urbit_id string, signature string, msg string) {
+	point, is_ok := phonemes.PhonemeToInt(urbit_id)
+	if !is_ok {
+		fmt.Printf("Not a valid ship name: %q\n", urbit_id)
+		os.Exit(1)
+	}
+	db := get_db(DB_PATH)
+	result, is_found := db.GetPoint(pkg_db.AzimuthNumber(point))
+	if !is_found {
+		fmt.Printf("Point not found!\n")
+		os.Exit(2)
+	}
+
+	crub := crypto.UrbitCrub{}
+	copy(crub.SignKeys.Pub[:], result.AuthKey)
+
+	if crub.Verify(hex_to_bytes(signature), []byte(msg)) {
+		fmt.Println("Signature is valid")
+	} else {
+		fmt.Println("Signature is not valid!")
+	}
 }

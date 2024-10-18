@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 )
 
@@ -36,26 +37,53 @@ func (v UrbitVein) ToCrub() (ret UrbitCrub) {
 	copy(ret.EncryptKeys.Pub[:], reverse(ed25519.NewKeyFromSeed(reverse(ret.EncryptKeys.Secret[:])).Public().(ed25519.PublicKey)))
 	copy(ret.SignKeys.Secret[:], v[32:64])
 	copy(ret.SignKeys.Pub[:], reverse(ed25519.NewKeyFromSeed(reverse(ret.SignKeys.Secret[:])).Public().(ed25519.PublicKey)))
+	ret.IsPublic = false
 	return
 }
 
+type HexField [32]byte
+
+// MarshalJSON converts [32]byte to a hex-encoded string for JSON
+func (h HexField) MarshalJSON() ([]byte, error) {
+	ret, err := json.Marshal(fmt.Sprintf("%x", h[:])) // Convert to slice to hex-encode
+	if err != nil {
+		return nil, fmt.Errorf("can't decode hex field %x: %w", h, err)
+	}
+	return ret, nil
+}
+
+// UnmarshalJSON parses a hex-encoded string back into [32]byte
+func (h *HexField) UnmarshalJSON(data []byte) error {
+	var hexStr string
+	if err := json.Unmarshal(data, &hexStr); err != nil {
+		return fmt.Errorf("invalid json %s: %w", string(data), err)
+	}
+	decoded, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return fmt.Errorf("can't decode %q: %w", hexStr, err)
+	}
+	if len(decoded) != 32 {
+		return fmt.Errorf("expected 32 bytes, got %d", len(decoded))
+	}
+	copy(h[:], decoded)
+	return nil
+}
+
 type UrbitCrub struct {
+	IsPublic bool
 	SignKeys struct {
-		Pub    [32]byte
-		Secret [32]byte
-	}
+		Pub    HexField `json:"pub"`
+		Secret HexField `json:"priv"`
+	} `json:"signature"`
 	EncryptKeys struct {
-		Pub    [32]byte
-		Secret [32]byte
-	}
+		Pub    HexField `json:"pub"`
+		Secret HexField `json:"priv"`
+	} `json:"encryption"`
 }
 
 func (c UrbitCrub) Sign(msg []byte) []byte {
 	privkey := ed25519.NewKeyFromSeed(reverse(c.SignKeys.Secret[:]))
-	fmt.Printf("privkey (sign): %x\n", privkey)
 	signature := ed25519.Sign(privkey, msg)
-	fmt.Printf("signautre (sign): %x\n", signature)
-	fmt.Printf("public: %x\n", privkey.Public())
 	return reverse(signature)
 }
 
