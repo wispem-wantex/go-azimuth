@@ -1,0 +1,32 @@
+# Azimuth Talk
+
+An introduction to Azimuth, the Naive Rollup, and how to use it outside of Urbit OS, featuring the up-and-coming GAS software stack.
+
+Azimuth is the blockchain-based Urbit ID system.  It's shrouded in mystery, due to the perplexing "Naive Rollup" system.  But it's actually not that hard, yet very powerful!  I will show how to use it to create Earth-side DNS and E2E encryption, among other interesting applications.
+
+
+
+Solid State Interpreter:
+- Ethereum
+- Sqlite
+
+
+
+Azimuth tutorial
+Naive tutorial
+
+Demo:
+
+1) SQLite schema
+2) show tool and snapshot sizes
+3) query some ships (state and logs)
+4) save a planet's privkey
+5) sign a message
+6) verify the message
+
+Concepts:
+
+- Naive Rollup extension (attest ETH address, IP address)
+- DNS server and spoofing a top-level domain
+	- No usernames or passwords
+	- No TLS / roundtrips needed
