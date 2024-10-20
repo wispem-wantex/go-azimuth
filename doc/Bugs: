@@ -1,0 +1,24 @@
+Bugs:
+
+- L2 planets are marked `is_active = 0`
+- Management (or ownership?  double check this) address is wrong
+	- tiller-tolbus (can't reproduce)
+- crypto suite version is wrong
+	- tiller-tolbus (fixed)
+	- midsum-salrux (fixed)
+	- sarmyn-samnym (fixed)
+- sponsor is wrong
+	- tiller-tolbus (fixed)
+	- migrev-dolseg (fixed)
+	- nospur-sontud (fixed)
+	- witbep-witbep (fixed)
+	- midsum-salrux (fixed)
+
+All values for master-malwyl are correct despite being dominion=2!
+
+- rift is wrong:
+	- docteg-mothep (fixed)
+	- witbep-witbep (fixed)
+	- midsum-salrux (fixed)
+- life is wrong:
+	- witbep-witbep (fixed)

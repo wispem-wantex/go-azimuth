@@ -1,0 +1,204 @@
+=ethereum -build-file /===/lib/ethereum/hoon
+
+=naive -build-file /===/lib/naive/hoon
+::=state (^state:naive %gx /=azimuth=/nas/noun)
+
+=verifier ^-  ^verifier:naive
+  |=  [dat=octs v=@ r=@ s=@]
+  ?:  (gth v 3)  ~  ::  TODO: move to jet
+  =/  dat-hex  ((x-co:co p.dat) q.dat)
+  ~&  "Dat: {<dat>}"
+  ~&  "Dat-hex: {dat-hex}"
+  =/  result
+    %-  mule
+    |.
+    =,  secp256k1:secp:crypto
+    %-  address-from-pub:key:ethereum
+    %-  serialize-point
+    =/  kec  (keccak-256:keccak:crypto dat)
+    =/  kec-hex  ((x-co:co 64) kec)
+    ~&  "Kec: {kec-hex}"
+    (ecdsa-raw-recover kec v r s)
+  ?-  -.result
+    %|  ~
+    %&  `p.result
+  ==
+
+=verify-sig |=  [sig=@ txdata=octs]
+    ^-  (unit @ux)
+    |^
+    ::  Reversed of the usual r-s-v order because Ethereum integers are
+    ::  big-endian
+    ::
+    =^  v  sig  (take 3)
+    =^  s  sig  (take 3 32)
+    =^  r  sig  (take 3 32)
+    ::  In Ethereum, v is generally 27 + recid, and verifier expects a
+    ::  recid.  Old versions of geth used 0 + recid, so most software
+    ::  now supports either format.  See:
+    ::
+    ::  https://github.com/ethereum/go-ethereum/issues/2053
+    ::
+    =?  v  (gte v 27)  (sub v 27)
+    (verifier txdata v r s)
+    ::
+    ++  take
+      |=  =bite
+      [(end bite sig) (rsh bite sig)]
+    --
+
+::Of course it doesn't verify against real state on a real ship; the signature uses nonce N and the state will have incremented it already to N+1 when that tx was received 
+
+------------------------------------------------------------
+
+My byte order:
+0x
+19.4574.6865.7265.756d.2053.6967.6e65.6420.4d65.7373.6167.653a.0a => "\x19Ethereum Signed Message:\n"
+2e.                                                               => This should be "byte length" (of prep''d data)
+5572.6269.7449.4456.3143.6861.696e.                              => "UrbitIDV1Chain" (urbit_chain_id)
+
+313a.                                                            => literal ":" and eth_chain_id
+
+0000.0000.                                                       => Nonce
+
+6717.38da.da5c.209c.12b6.501e.80c6.2e09.1c27.b14a.0a22.d601.a200 => TxRawData
+
+------------------------------------------------------------
+
+
+=/ point %*(. *point:naive owner.own [`@ux`(scan "942cc0b03f531bb7359347c4f272babb2eaf0c99" hex) 0])
+=/  unit-raw-tx  (parse-raw-tx:naive 0 (scan "671738dada5c209c12b6501e80c62e091c27b14a0a22d601a2000ef75011770757f561b40f3ba2dea676af739795101800457a19b68698bbdfde653437558121965eef535c95f967801c4e3a7928cb9d06a6fa66b4e97ca43e9500" hex))
+=/  raw-tx  -:(need unit-raw-tx)
+(verify-sig-and-nonce-p:naive verifier '1' point raw-tx)
+
+
+
+Proper byte order (as per verifier hoon func):
+0x
+6717.38da.da5c.209c.12b6.501e.80c6.2e09.1c27.b14a.0a22.d601.a200
+0000.0000.
+3a31.
+6e69.6168.4331.5644.4974.6962.7255.
+3634.
+0a3a.6567.6173.7365.4d20.6465.6e67.6953.206d.7565.7265.6874.4519
+
+----------------
+
+0x
+1945.7468.6572.6575.6d20.5369.676e.6564.204d.6573.7361.6765.3a0a.
+
+3436.
+
+5572.6269.7449.4456.3143.6861.696e.
+313a.
+0000.0000.
+6717.38da.da5c.209c.12b6.501e.80c6.2e09.1c27.b14a.0a22.d601.a200
+
+------------------------------------------------------------
+
+::=/  the-point  %*(. *point:naive transfer-proxy.own [`@ux`(scan "671738dada5c209c12b6501e80c62e091c27b14a" hex) 0])
+=/  point  %*(. *point:naive transfer-proxy.own [`@ux`(scan "671738dada5c209c12b6501e80c62e091c27b14a" hex) 0])
+=/  unit-raw-tx  (parse-raw-tx:naive 0 (scan "671738dada5c209c12b6501e80c62e091c27b14a8022d601a20473fdca35f685fa61153a73bef738ebfbf4cf95cca253dd39343ad3ae287e156228693b06f7a66defb761109e1d3c3bc5be348c28b22ae272d83709ea8a9acf031c" hex))
+=/  raw-tx  -:(need unit-raw-tx)
+(verify-sig-and-nonce-p:naive verifier '1' point raw-tx)
+
+Proper:
+0x6717.38da.da5c.209c.12b6.501e.80c6.2e09.1c27.b14a.8022.d601.a204.0000.0000.3a31.6e69.6168.4331.5644.4974.6962.7255.3634.0a3a.6567.6173.7365.4d20.6465.6e67.6953.206d.7565.7265.6874.4519
+
+
+0x6717.38da.da5c.209c.12b6.501e.80c6.2e09.1c27.b14a.8022.d601.a204.0000.0000.3a31.6e69.6168.4331.5644.4974.6962.7255.3634.0a3a.6567.6173.7365.4d20.6465.6e67.6953.206d.7565.7265.6874.4519
+
+
+=/  signature  (scan "0ef75011770757f561b40f3ba2dea676af739795101800457a19b68698bbdfde653437558121965eef535c95f967801c4e3a7928cb9d06a6fa66b4e97ca43e9500" hex)
+=/  signed-data  (scan "671738dada5c209c12b6501e80c62e091c27b14a0a22d601a200000000003a316e6961684331564449746962725536340a3a6567617373654d2064656e676953206d7565726568744519" hex)
+(verify-sig signature (as-octs:mimes:html signed-data))
+
+
+
+=/  signature  (scan "73fdca35f685fa61153a73bef738ebfbf4cf95cca253dd39343ad3ae287e156228693b06f7a66defb761109e1d3c3bc5be348c28b22ae272d83709ea8a9acf031c" hex)
+=/  signed-data  (scan "671738dada5c209c12b6501e80c62e091c27b14a8022d601a204000000003a316e6961684331564449746962725536340a3a6567617373654d2064656e676953206d7565726568744519" hex)
+(verify-sig signature (as-octs:mimes:html signed-data))
+
+
+------------------------------------------------------------
+
+=/  point  %*(. *point:naive owner.own [`@ux`(scan "bad132bf9c1269ee4fbc3affc537d3de3adb169b" hex) 1])
+=/  raw-tx  [ sig=2.743.453.713.131.819.838.623.175.697.828.752.397.538.315.430.690.147.921.299.827.022.750.607.274.901.944.849.635.004.769.786.466.366.396.530.451.906.007.605.201.466.137.560.404.457.027.721.698.240.491.460.864
+  raw=[p=30 q=1.289.364.793.794.703.308.280.725.181.896.083.669.574.158.827.614.511.911.937.702.784.327.739.904]
+  tx=[from=[ship=~sordem proxy=%own] [%spawn ship=~rigteg-havtuc address=0xbad1.32bf.9c12.69ee.4fbc.3aff.c537.d3de.3adb.169b]]
+]
+(verify-sig-and-nonce-p:naive verifier '1' point raw-tx)
+
+bad132bf9c1269ee4fbc3affc537d3de3adb169b0001fbea010000fbea00
+
+000000013a316e6961684331564449746962725530350a3a6567617373654d2064656e676953206d7565726568744519
+
+bad132bf9c1269ee4fbc3affc537d3de3adb169b0001fbea010000fbea00
+
+010000003a316e6961684331564449746962725530350a3a6567617373654d2064656e676953206d7565726568744519
+
+
+------------------------------------------------------------
+
+=/  i  0
+|-
+?:  (gth i 200)  ~
+=/  point  %*(. *point:naive owner.own [`@ux`(scan "d154a484a40abb6c1b434eeef657beb2a58d38ab" hex) i])
+=/  raw-tx  -:(need (parse-raw-tx:naive 0 (scan "06056dcdc6471439e31e878492f594b6f0d8f9d000061e9d0100001e9d005cb15e89d3ffc9081547cc8df08d961b991af2228e972b30dfca2914466288c769532b1c469ff6054529096a681b6744d171b76325469b7f9224f6be016dc4861b" hex)))
+?:  (verify-sig-and-nonce-p:naive verifier '1' point raw-tx)
+  `"Yay!"
+$(i +(i))
+
+
+------------------------------------------------------------
+
+=/  concerned-logs  %+  skim  logs
+                        |=  [e=event-log:rpc:ethereum]
+                        =/  blknum  block-number:(need mined:e)
+                        ?&(=(address.e 0xeb70.029c.fb3c.53c7.78ea.f68c.d28d.e725.390a.1fe9) (lth 20.494.510 blknum) (gth 20.534.510 blknum))
+%+  skim  `(list event-log:rpc:ethereum)`concerned-logs
+|=  [e=event-log:rpc:ethereum]
+=/  txs  (parse-roll:naive (need input:(need mined.e)))
+(gth (lent (skim `(list raw-tx:naive)`txs |=(t=raw-tx:naive =(ship:from:tx.t ~witbep-witbep)))) 0)
+
+[   i
+  [   mined
+    [ ~
+      [   input
+        [ ~
+          0x6e14.d765.0500.00d2.8c00.2ccf.04eb.a1b3.75dd.2aa2.9e13.74db.070c.3351.9b80.8ce9.d889.487f.fe94.1294.8cc4.30d6.0d3b.d7d6.cd78.1324.c3f4.3d1b.ec9f.400a.c372.6b8f.2072.0989.de8d.aec6.8390.1b00.00d2.8c03.6e14.d765.02d6.4486.1b57.f639.76e7.e769.f6d1.afd7.8697.d31d.7a1b.f6b6.e075.02dd.612f.ae7a.9e48.9387.c088.67d8.e98e.6823.5f31.e506.c16a.9c26.6491.a2cf.dbc3.d93d.281a.a77d.291b
+        ]
+        log-index=49
+        transaction-index=18
+        transaction-hash=0x518d.2845.fed9.6769.4c63.f56d.f4b2.7014.d011.c35c.fc4f.862b.c898.d43a.0148.6b60
+        block-number=20.513.889
+        block-hash=0x9264.8fc5.8ad5.3297.0b9c.ef2e.ff7a.19d9.10cf.9824.a695.6026.9fcb.5c87.8660.a932
+        removed=%.n
+      ]
+    ]
+    address=0xeb70.029c.fb3c.53c7.78ea.f68c.d28d.e725.390a.1fe9
+    data='0x'
+    topics=[i=0xcca7.39c7.2762.deed.0594.1b38.d4aa.82f2.718c.7445.7d5e.2d8c.5b1d.7642.caf2.2196 t=~]
+  ]
+    t
+  ~[
+    [   mined
+      [ ~
+        [   input
+          [ ~
+            0x1ca.553b.df9b.9426.c865.2aeb.f44d.0e8c.89e1.f2c0.1ed0.6d80.3af6.0e80.c09b.fdc7.7fba.9571.17f0.6476.e7e1.2602.e3ed.8b02.69ec.ff52.5234.c842.5f4d.2806.c8b6.6d27.2c02.6e14.d765.025e.e4ed.aaff.11db.133b.6228.9044.ad6b.7f3c.edb4.8428.ad50.2759.1e53.d23a.51c8.c941.50ff.d407.da21.f03e.7c37.32b5.9f11.7187.6841.c2be.84a7.c0a1.f8c2.f736.81e4.8c1b
+          ]
+          log-index=304
+          transaction-index=147
+          transaction-hash=0x3628.5dbe.3bc4.33da.8614.6ff2.da67.c977.8acf.57b8.8df0.c592.6336.8519.e7c1.ec15
+          block-number=20.514.781
+          block-hash=0x4802.fe68.0527.5dc1.e81f.9e56.a20b.39db.7bfe.58c2.4002.e926.18b4.8746.c695.1d76
+          removed=%.n
+        ]
+      ]
+      address=0xeb70.029c.fb3c.53c7.78ea.f68c.d28d.e725.390a.1fe9
+      data='0x'
+      topics=[i=0xcca7.39c7.2762.deed.0594.1b38.d4aa.82f2.718c.7445.7d5e.2d8c.5b1d.7642.caf2.2196 t=~]
+    ]
+  ]
+]

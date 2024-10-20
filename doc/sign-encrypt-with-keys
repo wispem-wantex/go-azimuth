@@ -1,0 +1,127 @@
+sign and sigh => signature
+safe and sure => verification
+
+Crypto implementation is ed:crypto (ed25519)
+
+---------------------
+
+Signature example from ~dozreg:
+
+=/  my-life  .^(@ %j /=life=/(scot %p our))
+=/  keypair  (nol:nu:crub:crypto privkey)
+=/  signature  `@uw`(sigh:as:keypair 'Test message')
+=/  pubkey  +<:.^([* pass *] %j /=deed=/(scot %p our)/(scot %ud my-life))
+(safe:as:(com:nu:crub:crypto pubkey) signature 'Test message')
+
+%.y
+
+
+=/  signature  (scan "0390bfc1bda2f255423c1eae00472a4d94b7b1fdea307685185fe46fc38578058770181710cc85bb7f2eb0fe35d15085c78a551aef2ecbfdf2f43f98fc27aa7c" hex)
+=/  pubkey  +<:.^([* pass *] %j /=deed=/~wisdeb-talmus/1)
+(safe:as:(com:nu:crub:crypto pubkey) signature 'hello, world!')
+
+
+
+----------------------
+
+
+Get a ship's public key:
+- scry from Azimuth:
+    .^((unit point:naive) %gx /=azimuth=/point/(scot %p ship)/noun)
+  and concatenate encryption_key + auth_key + literal constant 'b' (0x62)
+- scry from Jael:
+    :: "Deed" scry in Jael gets life, pubkey, and signature-if-comet for a ship and a life:
+    pass:[.^([=life =pass sig=(unit @ux)] %j /=deed=/~wisdeb-talmus/1)]
+  it will have a 'b' (0x62) appended to it
+
+Create a public-key crub:
+(com:nu:crub:crypto pubkey)
+
+
+Get your own private key:
+=privkey .^(@uw %j /=vein=/(scot %ud .^(@ %j /=life=/(scot %p our))))
+
+Derive crub-compatible keys from it:
+=/  bod  (rsh 3 privkey)
+=+  [c=(rsh 8 bod) s=(end 8 bod)]
+=/  [pub=[cry=@ sgn=@] sek=(unit [cry=@ sgn=@])]  [[cry=(puck:ed:crypto c) sgn=(puck:ed:crypto s)] `[cry=c sgn=s]]
+
+----------------------
+
+
+Sign an atom:
+=/  keypair  (nol:nu:crub:crypto privkey)
+((x-co:co 128) (sigh:as:keypair 'hello, world!'))
+
+---------------------
+
+Expand a crub secret key (either sign or encrypt) into an actual keypair
+
+=/  sgn-sek  sgn:(need sek)
+~&  sgn-sek
+`@ux`(suck:ed:crypto sgn:(need sek))
+
+(suck:ed:crypto (scan "aed1f34e1480677c465626694e25e7b65afdc6e8d69fd8b4ceee64bd6f4870d8" hex))
+
+---------------------
+
+seal takes a ship public key and message
+
+1) gets the encryption pubkey
+2) computes the shared-key with its crub's privkey and the given pubkey (shar:ed)
+3) takes sha256 of shared-key (shax)
+4) jams a 2-tuple of [signed-msg, msg]
+4) takes AES-SIV of that using the hashed shared-key and an empty AAD list
+5) jams the result
+
+---------------------
+
+To encrypt a message for ~wisdeb-talmus,
+
+:: as a moon
+=/  msg  'Super secret'
+=/  my-sec-crub  (nol:nu:crub:crypto privkey)
+=/  wt-pub-key  pass:[.^([=life =pass sig=(unit @ux)] %j /=deed=/~wisdeb-talmus/1)]
+=/  encrypted-msg  (seal:as.my-sec-crub wt-pub-key msg)
+encrypted-msg
+
+:: as ~wisdeb-talmus
+=/  encrypted-msg  41.849.192.325.788.884.138.356.562.082.411.871.948.626.606.972.785.818.773.602.429.829.720.559.258.787.963.211.693.292.841.295.428.340.645.565.607.993.474.211.824.198.720.197.319.292.014.970.937.137.711.402.090.361.605.725.882.346.100.591.527.965.457.223.708.483.984.158.310.279.593.563.720.605.520.981.638.327.196.699.407.157.249
+=/  moon-pubkey   pass:[.^([=life =pass sig=(unit @ux)] %j /=deed=/~docput-ripwep-wispem-wantex/1)]
+=/  my-sec-crub  (nol:nu:crub:crypto privkey)
+=/  decrypted-msg  (tear:as.my-sec-crub moon-pubkey encrypted-msg)
+`(unit msg=@t)`decrypted-msg
+
+-----------------------
+
+
+privkey: 712f2fa71eac637ccd5d5bdd73229f7b85a61a89facb90573fc9623a895f3f00aed1f34e1480677c465626694e25e7b65afdc6e8d69fd8b4ceee64bd6f4870d842
+c, s: 712f2fa71eac637ccd5d5bdd73229f7b85a61a89facb90573fc9623a895f3f00, aed1f34e1480677c465626694e25e7b65afdc6e8d69fd8b4ceee64bd6f4870d8
+
+pubkey (sign): b81aa63451cc3374a1d4a988262229d9041a0f2d62318e4ecec76c5b07df82fa
+
+----------------------------
+
+Symmetric key derivation
+
+:: on ~wisdeb-talmus
+=/  moon-pubkey  pass:[.^([=life =pass sig=(unit @ux)] %j /=deed=/~docput-ripwep-wispem-wantex/1)]
+=/  pub  (rsh 8 (rsh 3 moon-pubkey))
+=/  priv  (rsh 8 (rsh 3 privkey))
+(shar:ed:crypto pub priv)
+
+=wt-privkey 0wbq.rtCrd.viBha.yrpoT.WJ2Bn.-IDQM.zcsg3.xXWvk.6DJJq.f2T9V.
+                 ihs-y.mM1cV.~iQaJ.3jIAk.Fec3V.R9Ghj.tG8H5.bhtp2
+:: b69b7666cd7d29512a26d9637ead0a55feb27d308cc7100e1efa7d41a7b6d68f0b727949173e896c01339fd2d0ab434ec914a4e303e7526a45376a22b14b45d642
+
+:: on moon
+=/  pubkey  pass:[.^([=life =pass sig=(unit @ux)] %j /=deed=/~wisdeb-talmus/1)]
+=/  pub  (rev 3 32 (rsh 8 (rsh 3 pubkey)))
+=/  priv  (rev 3 32 (rsh 8 (rsh 3 privkey)))
+(shar:ed:crypto priv pub)
+
+
+=/  moon-pubkey  pass:[.^([=life =pass sig=(unit @ux)] %j /=deed=/~docput-ripwep-wispem-wantex/1)]
+=/  pub  (rsh 8 (rsh 3 moon-pubkey))
+=/  priv  (rsh 8 (rsh 3 wt-privkey))
+(shar:ed:crypto pub priv)
