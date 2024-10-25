@@ -37,8 +37,8 @@ jobs:
 
       - name: Install musl
         run: |
-          apt update
-          apt install -y musl-tools musl-dev
+          sudo apt update
+          sudo apt install -y musl-tools musl-dev
 
       - name: Compile with musl
         env:
