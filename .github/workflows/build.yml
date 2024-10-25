@@ -70,8 +70,8 @@ jobs:
         id: create_release
         uses: actions/create-release@v1
         with:
-          tag_name: ${{ github.ref }}  # The tag that triggered the workflow
-          release_name: Release ${{ github.ref }}  # Name of the release
+          tag_name: ${{ github.ref_name }}  # The tag that triggered the workflow
+          release_name: Release ${{ github.ref_name }}  # Name of the release
           draft: true  # Set to true if you want to create a draft release
           prerelease: true  # Set to true if it's a prerelease
         env:
@@ -84,3 +84,5 @@ jobs:
           asset_path: azm  # Path to your built artifact(s)
           asset_name: azm  # Name of the asset
           asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
