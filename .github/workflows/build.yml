@@ -1,33 +1,86 @@
-name: Go CI
+name: Build
 
-on: [push]
+on:
+  push:
+    branches: ["*"]   # Any branch
+    tags: ["v*.*.*"]  # Release tags
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: "1.22"
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.22"
 
-    - name: Install dependencies
-      run: |
-        go mod download
-        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.1
+      - name: Install dependencies
+        run: |
+          go mod download
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.1
 
-    - name: Lint
-      run: golangci-lint run
+      - name: Lint
+        run: golangci-lint run
 
-    - name: Validate SQL schema
-      run: |
-        sqlite3 whatever.db < pkg/db/schema.sql
+      - name: Validate SQL schema
+        run: |
+          sqlite3 whatever.db < pkg/db/schema.sql
 
-    - name: Run tests
-      run: |
-        mkdir -p sample_data
-        go test ./...
+      - name: Run tests
+        run: |
+          mkdir -p sample_data
+          go test ./...
+
+      - name: Install musl
+        run: |
+          apt update
+          apt install -y musl-tools musl-dev
+
+      - name: Compile with musl
+        env:
+          CC: musl-gcc  # Use musl-gcc as the C compiler
+          GOOS: linux
+          CGO_ENABLED: 1
+          GOARCH: amd64
+        run: |
+          go build -v -ldflags '-s -w -linkmode external -extldflags "-static"' -o azm ./cmd
+
+      - name: Upload build result
+        uses: actions/upload-artifact@v3
+        with:
+          name: azm
+          path: azm  # Path to the build output
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build # Only run if build is successful
+    if: github.ref =~ ^refs/tags/v[0-9]
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: azm
+
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref }}  # The tag that triggered the workflow
+          release_name: Release ${{ github.ref }}  # Name of the release
+          draft: true  # Set to true if you want to create a draft release
+          prerelease: true  # Set to true if it's a prerelease
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}  # URL to upload assets
+          asset_path: azm  # Path to your built artifact(s)
+          asset_name: azm  # Name of the asset
+          asset_content_type: application/octet-stream

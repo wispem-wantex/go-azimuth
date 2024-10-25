@@ -9,3 +9,5 @@
 	- interacting with a SQLite data store
 - `/pkg/scraper`:
 	- interactions with Ethereum node to fetch blocks / transactions / logs
+- `/pkg/crypto`:
+	- Arvo-compatible cryptographic operations: signing and verifying messages with Azimuth keys
