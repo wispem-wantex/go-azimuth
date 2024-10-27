@@ -23,14 +23,16 @@ const (
 )
 
 // This is insane, but it's the recommended way to do it.
+// https://github.com/ethereum/go-ethereum/issues/19766#issuecomment-963442824
 func check_error(err error) (int64, bool) {
 	var rpc_err interface {
 		Error() string
 		ErrorCode() int
 		ErrorData() interface{}
 	}
-	if errors.As(err, &rpc_err) && rpc_err.ErrorCode() == -32005 {
+	if errors.As(err, &rpc_err) {
 		if rpc_err.ErrorCode() == -32005 {
+			// Too many results; get the recommended "to" block
 			data, is_ok := rpc_err.ErrorData().(map[string]interface{})
 			if !is_ok {
 				panic(data)
@@ -48,6 +50,11 @@ func check_error(err error) (int64, bool) {
 				panic(err)
 			}
 			return ret, true
+		} else if rpc_err.ErrorCode() == -32603 {
+			// Service temporarily unavailable
+			// TODO: refactor this function to return a proper error
+			// For now, just return "true" and callee will assume what it means
+			return 0, true
 		}
 	}
 	return 0, false

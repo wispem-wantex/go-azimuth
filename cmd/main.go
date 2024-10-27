@@ -97,6 +97,8 @@ func main() {
 			panic("Gotta provide: ship, signature, message")
 		}
 		verify(args[1], args[2], args[3])
+	case "custom":
+		custom_colors()
 	default:
 		fmt.Printf("invalid subcommand: %q\n", args[0])
 		os.Exit(1)
@@ -300,4 +302,56 @@ func verify(urbit_id string, signature string, msg string) {
 	} else {
 		fmt.Println("Signature is not valid!")
 	}
+}
+
+
+func custom_colors() {
+	const (
+		Reset   = "\033[0m"
+		Red     = "\033[31m"
+		Green   = "\033[32m"
+		Blue    = "\033[34m"
+		Black   = "\033[30m"
+		Yellow  = "\033[33m"
+		Cyan    = "\033[36m"
+		Magenta = "\033[35m"
+		White   = "\033[37m"
+	)
+
+	fmt.Println("671738DADA5C209C12B6501E80C62E091C27B14A8022D601A20473FDCA35F685FA61153A73BEF738EBFBF4CF95CCA253DD39343AD3AE287E156228693B06F7A66DEFB761109E1D3C3BC5BE348C28B22AE272D83709EA8A9ACF031C671738DADA5C209C12B6501E80C62E091C27B14A0A22D601A2000EF75011770757F561B40F3BA2DEA676AF739795101800457A19B68698BBDFDE653437558121965EEF535C95F967801C4E3A7928CB9D06A6FA66B4E97CA43E9500")
+
+	fmt.Print(Green)
+	fmt.Print("671738DADA5C209C12B6501E80C62E091C27B14A") // Eth address
+
+	fmt.Print(Cyan)
+	fmt.Print("80") // Opcode: transfer point, with breach
+
+	fmt.Print(Yellow)
+	fmt.Print("22D601A2") // Ship: ~rilfun-lidlen
+
+	fmt.Print(Red)
+	fmt.Print("04") // Authority: transfer proxy
+
+	fmt.Print(Magenta)
+	fmt.Print("73FDCA35F685FA61153A73BEF738EBFBF4CF95CCA253DD39343AD3AE287E156228693B06F7A66DEFB761109E1D3C3BC5BE348C28B22AE272D83709EA8A9ACF031C") // Signature
+
+	// // ------
+
+	fmt.Print(Green)
+	fmt.Print("671738DADA5C209C12B6501E80C62E091C27B14A") // Eth address
+
+	fmt.Print(Cyan)
+	fmt.Print("0A") // Opcode: set transfer proxy
+
+	fmt.Print(Yellow)
+	fmt.Print("22D601A2") // Source ship: ~rilfun-lidlen
+
+	fmt.Print(Red)
+	fmt.Print("00") // Authority: owner
+
+	fmt.Print(Magenta)
+	fmt.Print("0EF75011770757F561B40F3BA2DEA676AF739795101800457A19B68698BBDFDE653437558121965EEF535C95F967801C4E3A7928CB9D06A6FA66B4E97CA43E9500") // Signature
+
+	fmt.Println(Reset)
+
 }
