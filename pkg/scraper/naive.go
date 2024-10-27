@@ -86,7 +86,7 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 
 		ret := []*types.Transaction{} // Has to be pointer type to avoid copying an atomic.Pointer
 		for _, elem := range batch {
-			for _, is_err_service_temp_unavailable := check_error(elem.Error); is_err_service_temp_unavailable;  {
+			for _, is_err_service_temp_unavailable := check_error(elem.Error); is_err_service_temp_unavailable; {
 				fmt.Printf("Service temporarily unavailable error.  Pausing 1s and trying again\n")
 				time.Sleep(1 * time.Second)
 				// Try again on temporarily-unavailable errors
@@ -94,8 +94,12 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 					log.Fatalf("Batch call failed: %#v", err)
 				}
 			}
-			// rpc.BatchElem{Method:"eth_getTransactionByHash", Args:[]interface {}{0xad2f676e4c35c7271123e77bd5616d4e89ae0e93cd0f5a9e4fb93a735ded42be}, Result:(*types.Transaction)(0xc000332180),
-			// (&rpc.jsonError{Code:-32603, Message:"service temporarily unavailable", Data:interface {}(nil)})
+			// rpc.BatchElem{
+			// 	Method:"eth_getTransactionByHash",
+			// 	Args:[]interface {}{0xad2f676e4c35c7271123e77bd5616d4e89ae0e93cd0f5a9e4fb93a735ded42be},
+			// 	Result:(*types.Transaction)(0xc000332180),
+			// 	Error: &rpc.jsonError{Code:-32603, Message:"service temporarily unavailable", Data:interface {}(nil)},
+			// }
 			if elem.Error != nil {
 				panic(fmt.Sprintf("%#v (%#v)", elem, elem.Error))
 			}
