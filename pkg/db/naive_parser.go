@@ -274,6 +274,12 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 func ParseNaiveBatch(batch []byte, ethereum_event_log_id uint64) []NaiveTx {
 	ret := []NaiveTx{}
 
+	get_batch := func(i, j int) []byte {
+		ret := batch[max(0, i):max(0, j)]
+		padding_length := (j - i) - len(ret)
+		return append(make([]byte, padding_length), ret...)
+	}
+
 	uint32_from_bytes := func(b []byte) uint32 {
 		padded_bytes := make([]byte, 4)
 		copy(padded_bytes[4-len(b):], b) // Right-align the bytes in a 4-byte array
@@ -288,15 +294,18 @@ func ParseNaiveBatch(batch []byte, ethereum_event_log_id uint64) []NaiveTx {
 		tx := NaiveTx{EthereumEventLogID: ethereum_event_log_id, IntraLogIndex: intra_log_index}
 
 		i, j = i-65, i
-		copy(tx.Signature[:65], batch[max(0, i):j])
+		copy(tx.Signature[:65], get_batch(i, j))
 		tx_mark := i // Set a mark so after parsing we can set the whole TxRawData bytes
+		if tx_mark < 0 {
+			// Not a valid batch
+			return []NaiveTx{}
+		}
 
 		i, _ = i-1, i
 		tx.SourceProxyType = uint(batch[max(0, i)])
 
 		i, j = i-4, i
-		tx.SourceShip = AzimuthNumber(binary.BigEndian.Uint32(batch[max(0, i):j]))
-		// fmt.Printf("Ship: ~%s\n", phonemes.IntToPhoneme(ship))
+		tx.SourceShip = AzimuthNumber(binary.BigEndian.Uint32(get_batch(i, j)))
 
 		i, _ = i-1, i
 		tx.Opcode = 0x7f & uint(batch[max(0, i)])
@@ -304,47 +313,47 @@ func ParseNaiveBatch(batch []byte, ethereum_event_log_id uint64) []NaiveTx {
 		switch tx.Opcode {
 		case OP_TRANSFER_POINT:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
+			tx.TargetAddress = common.BytesToAddress(get_batch(i, j))
 			tx.Flag = flag // reset
 		case OP_SPAWN:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(batch[max(0, i):j]))
+			tx.TargetShip = AzimuthNumber(binary.BigEndian.Uint32(get_batch(i, j)))
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
+			tx.TargetAddress = common.BytesToAddress(get_batch(i, j))
 		case OP_CONFIGURE_KEYS:
 			i, j = i-32, i
-			tx.EncryptionKey = batch[max(0, i):j]
+			tx.EncryptionKey = get_batch(i, j)
 
 			i, j = i-32, i
-			tx.AuthKey = batch[max(0, i):j]
+			tx.AuthKey = get_batch(i, j)
 
 			i, j = i-4, i //
-			tx.CryptoSuiteVersion = uint32_from_bytes(batch[max(0, i):j])
+			tx.CryptoSuiteVersion = uint32_from_bytes(get_batch(i, j))
 			tx.Flag = flag // breach
 		case OP_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(get_batch(i, j)))
 		case OP_CANCEL_ESCAPE:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(get_batch(i, j)))
 		case OP_ADOPT:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(get_batch(i, j)))
 		case OP_REJECT:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(get_batch(i, j)))
 		case OP_DETACH:
 			i, j = i-4, i
-			tx.TargetShip = AzimuthNumber(uint32_from_bytes(batch[max(0, i):j]))
+			tx.TargetShip = AzimuthNumber(uint32_from_bytes(get_batch(i, j)))
 		case OP_SET_MANAGEMENT_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
+			tx.TargetAddress = common.BytesToAddress(get_batch(i, j))
 		case OP_SET_SPAWN_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
+			tx.TargetAddress = common.BytesToAddress(get_batch(i, j))
 		case OP_SET_TRANSFER_PROXY:
 			i, j = i-20, i
-			tx.TargetAddress = common.BytesToAddress(batch[max(0, i):j])
+			tx.TargetAddress = common.BytesToAddress(get_batch(i, j))
 		}
 
 		// WTF: if this is the last tx in the batch, leading "0x00"s could be omitted from the

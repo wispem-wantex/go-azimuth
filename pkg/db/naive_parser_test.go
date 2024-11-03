@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	. "go-azimuth/pkg/db"
 )
@@ -155,10 +156,16 @@ func TestParseNaiveBatch(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Invalid batch
+			hex_to_bytes("7e7369636465762d70696c6e7570207761732068657265"),
+			[]NaiveTx{},
+		},
 	}
 
 	for _, tc := range test_cases {
 		rslt := ParseNaiveBatch(tc.Data, 0)
+		require.Equal(t, len(rslt), len(tc.Result))
 		for i := range tc.Result {
 			assert.Equal(tc.Result[i], rslt[i])
 		}
