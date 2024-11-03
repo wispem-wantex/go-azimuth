@@ -35,6 +35,25 @@ jobs:
           mkdir -p sample_data
           go test ./...
 
+  release:
+    runs-on: ubuntu-latest
+    needs: build # Only run if build is successful
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.22"
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.1
+
       - name: Install musl
         run: |
           sudo apt update
@@ -49,22 +68,6 @@ jobs:
         run: |
           go build -v -ldflags '-s -w -linkmode external -extldflags "-static"' -o azm ./cmd
 
-      - name: Upload build result
-        uses: actions/upload-artifact@v3
-        with:
-          name: azm
-          path: azm  # Path to the build output
-
-  release:
-    runs-on: ubuntu-latest
-    needs: build # Only run if build is successful
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: azm
 
       - name: Create release
         id: create_release
