@@ -17,11 +17,6 @@ import (
 	. "go-azimuth/pkg/db"
 )
 
-const (
-	AZIMUTH_ADDRESS            = "0x223c067f8cf28ae173ee5cafea60ca44c335fecb"
-	AZIMUTH_START_BLOCK_NUMBER = 6784880
-)
-
 // This is insane, but it's the recommended way to do it.
 // https://github.com/ethereum/go-ethereum/issues/19766#issuecomment-963442824
 func check_error(err error) (int64, bool) {
@@ -91,15 +86,18 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB) {
 		panic(err)
 	}
 
+	contract := db.GetContractByName("Azimuth")
+
 	batch_size := int64(100000)
-	from_block := big.NewInt(AZIMUTH_START_BLOCK_NUMBER)
+	from_block := big.NewInt(0).SetUint64(max(contract.StartBlockNum, contract.LatestBlockNumFetched))
 	to_block := big.NewInt(0).Add(from_block, big.NewInt(batch_size-1))
-	contractAddress := common.HexToAddress(AZIMUTH_ADDRESS)
 	for i := 0; i < 1000 && from_block.Uint64() < latest_block; i++ {
+		fmt.Printf("===================================\ni: %d\n======================================\n\n", i)
+		fmt.Printf("Azimuth contract: fetching blocks %d - %d; latest block is %d\n", from_block, to_block, latest_block)
 		query := ethereum.FilterQuery{
 			FromBlock: from_block,
 			ToBlock:   to_block,
-			Addresses: []common.Address{contractAddress},
+			Addresses: []common.Address{contract.Address},
 		}
 		logs, err := client.FilterLogs(context.Background(), query)
 		if err != nil {
@@ -110,20 +108,9 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB) {
 			}
 			log.Fatalf("Failed to fetch logs: %#v", err)
 		}
+
 		// Process the logs
 		for _, l := range logs {
-			// fmt.Println("----------")
-			// fmt.Println("Log Block Number:", l.BlockNumber)
-			// fmt.Printf(EVENT_NAMES[l.Topics[0]])
-			// fmt.Printf("(")
-			// for _, t := range l.Topics[1:] {
-			// 	fmt.Print(t, ", ")
-			// }
-			// fmt.Printf(")\n")
-			// if len(l.Data) != 0 {
-			// 	fmt.Println(hex.EncodeToString(l.Data))
-			// }
-
 			azimuth_event_log := ParseEthereumLog(l)
 			if azimuth_event_log.Name == "" {
 				// Probably an Ecliptic log
@@ -132,17 +119,16 @@ func CatchUpAzimuthLogs(client *ethclient.Client, db DB) {
 			db.SaveEvent(&azimuth_event_log)
 		}
 
+		// Update latest-block-fetched
+		db.SetLatestContractBlockFetched(contract.ID, min(latest_block, to_block.Uint64()))
+
 		// Compute next batch size adaptively
 		if len(logs) < 1000 {
 			batch_size *= 2
 		}
 
-		fmt.Printf("old from: %d; old to: %d\n", from_block, to_block)
-
 		from_block.Add(to_block, big.NewInt(1))
 		to_block.Add(from_block, big.NewInt(batch_size-1))
-		fmt.Printf("new from: %d; new to: %d\n", from_block, to_block)
-		fmt.Printf("===================================\ni: %d\n======================================\n\n", i)
 		time.Sleep(1 * time.Second)
 	}
 }

@@ -17,11 +17,6 @@ import (
 	. "go-azimuth/pkg/db"
 )
 
-const (
-	NAIVE_ADDRESS            = "0xeb70029cfb3c53c778eaf68cd28de725390a1fe9"
-	NAIVE_START_BLOCK_NUMBER = 13369829
-)
-
 // Fetch all the Naive logs, and then fetch the transaction data for each log
 func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 	latest_block, err := client.BlockNumber(context.Background())
@@ -29,12 +24,14 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 		panic(err)
 	}
 
+	contract := db.GetContractByName("Naive")
+
 	// Assume we can fetch all the logs in 1 query
 	// TODO: not a good assumption
 	query := ethereum.FilterQuery{
-		FromBlock: big.NewInt(NAIVE_START_BLOCK_NUMBER),
+		FromBlock: big.NewInt(0).SetUint64(max(contract.StartBlockNum, contract.LatestBlockNumFetched)),
 		ToBlock:   big.NewInt(0).SetUint64(latest_block),
-		Addresses: []common.Address{common.HexToAddress(NAIVE_ADDRESS)},
+		Addresses: []common.Address{contract.Address},
 	}
 	logs, err := client.FilterLogs(context.Background(), query)
 	if err != nil {
@@ -74,10 +71,12 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 	}
 
 	GetNaiveTransactionData(client, db, processed_logs, apply_txs)
+	db.SetLatestContractBlockFetched(contract.ID, latest_block)
 }
 
 // Get transaction data (call-data) for Batch events, in batches (yes)
 func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEventLog, apply_txs bool) {
+	contract := db.GetContractByName("Naive")
 	// Callback function to execute RPC batches
 	do_batched_rpc := func(batch []rpc.BatchElem) []*types.Transaction {
 		if err := client.Client().BatchCall(batch); err != nil {
@@ -108,8 +107,6 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 			if !is_ok {
 				panic(elem.Result)
 			}
-			fmt.Printf("Transaction Hash: %s\n", tx.Hash().Hex())
-			fmt.Println("------------------------------------------------")
 			ret = append(ret, tx)
 		}
 		return ret
@@ -123,6 +120,9 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 		if ii > len(logs) {
 			ii = len(logs)
 		}
+
+		fmt.Printf("===================================\ni: %d\n======================================\n\n", i)
+		fmt.Printf("Naive contract: fetching tx data %d - %d; total txs is %d\n", i, ii, len(logs))
 
 		// Prepare a batch for RPC-ing
 		batch := []rpc.BatchElem{}
@@ -153,6 +153,11 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 			log.Data = tx.Data()
 			db.SmuggleNaiveBatchDataIntoEvent(log)
 		}
+
+		// Update latest-block-fetched
+		// WTF: transactions do not expose a block number, and you can't get it with ethclient
+		// See: https://github.com/ethereum/go-ethereum/issues/15210
+		db.SetLatestContractBlockFetched(contract.ID, logs[ii-1].BlockNumber)
 
 		time.Sleep(1 * time.Second)
 	}
