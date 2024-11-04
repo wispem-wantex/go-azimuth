@@ -68,7 +68,6 @@ jobs:
         run: |
           go build -v -ldflags '-s -w -linkmode external -extldflags "-static"' -o azm ./cmd
 
-
       - name: Create release
         id: create_release
         uses: actions/create-release@v1

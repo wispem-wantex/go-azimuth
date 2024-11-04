@@ -40,7 +40,7 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 	}
 
 	// To get Tx data, we have to use batching; otherwise, turbo slow
-	processed_logs := []EthereumEventLog{}
+	parsed_logs := []EthereumEventLog{}
 
 	// First, save the Ethereum logs
 	for _, l := range logs {
@@ -56,21 +56,15 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 			fmt.Println(hex.EncodeToString(l.Data))
 		}
 
-		azimuth_event_log := ParseEthereumLog(l)
-		if azimuth_event_log.Name == "" {
-			// Probably an Ecliptic log
-			fmt.Println("Skipping event due to empty name (assuming it's an Ecliptic log)")
-			continue
-		}
-
+		naive_event_log := ParseEthereumLog(l)
 		// Save it in the DB
-		db.SaveEvent(&azimuth_event_log)
+		db.SaveEvent(&naive_event_log)
 
 		// Add it to the list of call-data to fetch
-		processed_logs = append(processed_logs, azimuth_event_log)
+		parsed_logs = append(parsed_logs, naive_event_log)
 	}
 
-	GetNaiveTransactionData(client, db, processed_logs, apply_txs)
+	GetNaiveTransactionData(client, db, parsed_logs, apply_txs)
 	db.SetLatestContractBlockFetched(contract.ID, latest_block)
 }
 

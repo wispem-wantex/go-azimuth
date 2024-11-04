@@ -67,14 +67,12 @@ func main() {
 	switch args[0] {
 	case "catch_up_logs":
 		catch_up_logs()
-	case "play_logs_azimuth":
+	case "play_logs":
 		play_logs()
 	case "query":
 		query(args[1])
 	case "show_logs":
 		show_logs(args[1])
-	case "play_logs_naive":
-		play_naive_logs()
 	case "checkpoint":
 		if len(args) < 2 {
 			panic("Gotta provide a path to checkpoint into")
@@ -118,10 +116,9 @@ func catch_up_logs() {
 
 func play_logs() {
 	db := get_db(DB_PATH)
+	fmt.Println("Playing azimuth logs")
 	db.PlayAzimuthLogs()
-}
-func play_naive_logs() {
-	db := get_db(DB_PATH)
+	fmt.Println("Playing naive logs")
 	db.PlayNaiveLogs()
 }
 

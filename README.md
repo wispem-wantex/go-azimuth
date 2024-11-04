@@ -6,14 +6,10 @@ For more on the GAS stack, read: https://twitter.com/wispem_wantex/status/183735
 
 Implemented as a subcommands program.  Available subcommands:
 
-- get_logs_azimuth:
-	Download Azimuth logs since the smart contract was launched.
-- get_logs_naive:
-	Download the Naive logs since the smart contract was launched.
+- get_logs:
+	Download Azimuth and Naive logs since the smart contracts were launched.
 - play_logs:
-	Play (apply) the existing set of Azimuth logs already downloaded, up until the launch of the Naive contract
-- play_logs_naive:
-	Play (apply) logs, both Naive and Azimuth, since the launch of the Naive contract
+	Play (apply) the existing set of Azimuth and Naive logs already downloaded
 - query:
 	Once logs have been downloaded and played, you can query for points.
 - show_logs:
@@ -38,7 +34,7 @@ You will need:
 Once you have Go, gcc and SQLite, compiling is just:
 
 ```bash
-go build -o azimuth ./cmd
+go build -o azm ./cmd
 ```
 
 I like to call it `azimuth` or `azm`.  It's up to you of course.
@@ -58,15 +54,15 @@ For convenience, snapshots will be provided:
 
 These are optional; as long as you have an Ethereum node connection, you should be able to download the logs and rebuild the state from scratch in less than an hour.  Probably some people should do this periodically to make sure the snapshot is correct.  :)
 
-## Building from scratch
+## Building database from scratch
 
 Building the state from scratch requires an Ethereum node connection.  Each step should run in under 10 minutes.  To make it faster, see the section below (speedup).
 
-After the two "get_logs_XXXX" commands, check that there's no panics (error stack traces) in the console.  If there are, *please send the whole output to me*!!  There's a hard-to-reproduce connection bug I'm trying to fix, it happens randomly like 1 in every 20 runs.  If a panic happens, the db file is invalid; just delete it start over (get the logs again, both L1 and L2).
+After the "get_logs" command, check that there's no panics (error stack traces) in the console.  If there are, *please send the whole output to me*!!  There's a hard-to-reproduce connection bug I'm trying to fix, it happens randomly like 1 in every 20 runs.  If a panic happens, the db file is invalid; just delete it start over (get the logs again, both L1 and L2).
 
 ```bash
 # Compile it
-go build -o azimuth ./cmd  # You don't have to call it `azimuth`, it's up to you
+go build -o azm ./cmd  # You don't have to call it `azm`, it's up to you
 
  # You need an Ethereum RPC url.  Check infura.io for a free one if you want
 export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/<YOUR_API_KEY>
@@ -74,13 +70,11 @@ export ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/<YOUR_API_KEY>
 # Fetch the logs, L1 and L2.
 # You can pick any database filepath you want; I like `azimuth.db`.  That's also the
 # default, so you can omit it if you like.
-./azimuth --db azimuth.db get_logs_azimuth # Specify database file manually
-./azimuth get_logs_naive                   # "azimuth.db" is the default if not provided
+./azm get_logs                  # "azimuth.db" is the default if not provided
+./azm --db azimuth.db get_logs  # ....or specify database file manually
 
 # Play the logs
-# These don't print anything, and they take a few mins each.
-./azimuth play_logs_azimuth
-./azimuth play_logs_naive  # This will print some "Signature failed to verify"; it's OK
+./azm play_logs  # This will print some "Signature failed to verify"; it's OK
 ```
 
 ### Tip: speedup with an in-memory database file
@@ -98,8 +92,8 @@ mkdir memory_dir
 sudo mount -t tmpfs -o size=500M tmpfs memory_dir
 
 # Run the commands from above
-./azimuth --db memory_dir/azimuth.db get_logs_azimuth
-# ...etc
+./azm --db memory_dir/azimuth.db get_logs
+./azm --db memory_dir/azimuth.db play_logs
 
 # Vacuum the database, to collapse the `.db-shm` and `.db-wal` files
 sqlite memory_dir/azimuth.db "vacuum"
@@ -115,12 +109,14 @@ Using this trick will make the whole thing 8-10 times faster.
 
 ## Using it
 
-So far the main thing you can do with it once you've built a database is query it.  (Piping the output of `query` to `jq` makes it pretty-print the JSON.)
+### Querying
+
+Piping the output of `query` to `jq` makes it pretty-print the JSON.  This is nice, but optional:
 
 ```bash
 # Check ~wispem-wantex's Azimuth state
-./azimuth query wispem-wantex | jq
+./azm query wispem-wantex | jq
 
 # Show ~wispem-wantex's Azimuth event history
-./azimuth show_logs wispem-wantex
+./azm show_logs wispem-wantex
 ```

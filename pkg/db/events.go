@@ -145,6 +145,7 @@ func (db *DB) PlayAzimuthLogs() {
 			// No unprocessed logs left; we're finished
 			break
 		}
+		fmt.Printf("Applying events %d to %d\n", events[0].ID, events[len(events)-1].ID)
 		db.ApplyEventEffects(events)
 	}
 }

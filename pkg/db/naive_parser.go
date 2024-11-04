@@ -181,7 +181,11 @@ func (db *DB) PlayNaiveLogs() {
 			// No unprocessed logs left; we're finished
 			break
 		}
-		for _, e := range events {
+		fmt.Printf("Applying events %d to %d\n", events[0].ID, events[len(events)-1].ID)
+		for i, e := range events {
+			if i%1000 == 0 {
+				fmt.Printf("On event %d of %d\n", i, len(events))
+			}
 			if e.ContractAddress == common.HexToAddress("eb70029cfb3c53c778eaf68cd28de725390a1fe9") {
 				// Naive
 				db.ApplyBatchEvent(e)
