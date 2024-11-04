@@ -18,7 +18,7 @@ import (
 )
 
 // Fetch all the Naive logs, and then fetch the transaction data for each log
-func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
+func CatchUpNaiveLogs(client *ethclient.Client, db DB) {
 	latest_block, err := client.BlockNumber(context.Background())
 	if err != nil {
 		panic(err)
@@ -64,12 +64,12 @@ func CatchUpNaiveLogs(client *ethclient.Client, db DB, apply_txs bool) {
 		parsed_logs = append(parsed_logs, naive_event_log)
 	}
 
-	GetNaiveTransactionData(client, db, parsed_logs, apply_txs)
+	GetNaiveTransactionData(client, db, parsed_logs)
 	db.SetLatestContractBlockFetched(contract.ID, latest_block)
 }
 
 // Get transaction data (call-data) for Batch events, in batches (yes)
-func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEventLog, apply_txs bool) {
+func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEventLog) {
 	contract := db.GetContractByName("Naive")
 	// Callback function to execute RPC batches
 	do_batched_rpc := func(batch []rpc.BatchElem) []*types.Transaction {
@@ -154,10 +154,5 @@ func GetNaiveTransactionData(client *ethclient.Client, db DB, logs []EthereumEve
 		db.SetLatestContractBlockFetched(contract.ID, logs[ii-1].BlockNumber)
 
 		time.Sleep(1 * time.Second)
-	}
-
-	if apply_txs {
-		panic("TODO")
-		// db.ApplyEventEffects([]EthereumEventLog{azimuth_event_log})
 	}
 }

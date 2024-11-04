@@ -111,7 +111,7 @@ func catch_up_logs() {
 	defer client.Close()
 
 	scraper.CatchUpAzimuthLogs(client, db)
-	scraper.CatchUpNaiveLogs(client, db, false)
+	scraper.CatchUpNaiveLogs(client, db)
 }
 
 func play_logs() {
