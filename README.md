@@ -120,3 +120,4 @@ Piping the output of `query` to `jq` makes it pretty-print the JSON.  This is ni
 # Show ~wispem-wantex's Azimuth event history
 ./azm show_logs wispem-wantex
 ```
+
