@@ -36,7 +36,7 @@ func (p AzimuthNumber) Parent() AzimuthNumber {
 
 // Get the "rank" of an Azimuth point
 func (p AzimuthNumber) Rank() AzimuthRank {
-	if p < 0xff {
+	if p <= 0xff {
 		return GALAXY
 	} else if p <= 0xffff {
 		return STAR
