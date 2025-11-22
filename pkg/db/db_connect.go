@@ -25,6 +25,10 @@ type DB struct {
 	DB *sqlx.DB
 }
 
+type Tx struct {
+	*sqlx.Tx
+}
+
 func DBCreate(path string) (DB, error) {
 	// First check if the path already exists
 	_, err := os.Stat(path)

@@ -40,11 +40,11 @@ func (d AzimuthDiff) DataAsKeys() (crypto_suite_version uint32, auth_key []byte,
 	return binary.BigEndian.Uint32(d.Data[:4]), d.Data[4:36], d.Data[36:]
 }
 
-func (db *DB) SaveDiff(d AzimuthDiff) {
+func (tx Tx) SaveDiff(d AzimuthDiff) {
 	if d.Data == nil {
 		d.Data = []byte{}
 	}
-	_, err := db.DB.NamedExec(`
+	_, err := tx.NamedExec(`
 		insert into diffs (source_event_log_id, intra_log_index, azimuth_number, operation, data)
 		           values (:source_event_log_id, :intra_log_index, :azimuth_number, :operation, :data)`,
 		d)

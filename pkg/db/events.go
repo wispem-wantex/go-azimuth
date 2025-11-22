@@ -151,17 +151,18 @@ func (db *DB) PlayAzimuthLogs() {
 }
 
 func (db *DB) ApplyEventEffects(events []EthereumEventLog) {
-	tx, err := db.DB.Begin()
+	t, err := db.DB.Beginx()
 	if err != nil {
 		panic(err)
 	}
+	tx := &Tx{t}
 
 	for _, e := range events {
 		effects, diffs := e.Effects()
 
 		// Apply the query
 		if effects.SQL != "" {
-			_, err = db.DB.NamedExec(effects.SQL, effects.BindValues)
+			_, err = tx.NamedExec(effects.SQL, effects.BindValues)
 			if err != nil {
 				fmt.Printf("%q; %#v\n", effects.SQL, effects.BindValues)
 				if err := tx.Rollback(); err != nil {
@@ -173,11 +174,11 @@ func (db *DB) ApplyEventEffects(events []EthereumEventLog) {
 
 		// Save the diffs
 		for _, d := range diffs {
-			db.SaveDiff(d)
+			tx.SaveDiff(d)
 		}
 
 		// Mark the event as processed
-		_, err = db.DB.NamedExec(`
+		_, err = tx.NamedExec(`
 			update ethereum_events
 			   set is_processed=1
 			 where block_number = :block_number and log_index = :log_index`,

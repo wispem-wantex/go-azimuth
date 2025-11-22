@@ -202,10 +202,16 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 		panic(event)
 	}
 
+	t, err := db.DB.Beginx()
+	if err != nil {
+		panic(err)
+	}
+	dbtx := Tx{t}
+
 	naive_txs := ParseNaiveBatch(event.Data, event.ID)
 	for _, tx := range naive_txs {
 		var p Point
-		err := db.DB.Get(&p, `select * from points where azimuth_number = ?`, tx.SourceShip)
+		err := dbtx.Get(&p, `select * from points where azimuth_number = ?`, tx.SourceShip)
 		if err != nil {
 			panic(err)
 		}
@@ -217,9 +223,9 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 		}
 
 		// Get effects
-		effects, diffs := tx.Effects(db)
+		effects, diffs := tx.Effects(dbtx)
 		for _, q := range effects {
-			_, err = db.DB.NamedExec(q.SQL, q.BindValues)
+			_, err = dbtx.NamedExec(q.SQL, q.BindValues)
 			if err != nil {
 				fmt.Printf("%q; %#v\n", q.SQL, q.BindValues)
 				panic(err)
@@ -227,15 +233,19 @@ func (db *DB) ApplyBatchEvent(event EthereumEventLog) {
 		}
 
 		for _, d := range diffs {
-			db.SaveDiff(d)
+			dbtx.SaveDiff(d)
 		}
 	}
-	_, err := db.DB.NamedExec(`
+	_, err = dbtx.NamedExec(`
 		update ethereum_events
 		   set is_processed=1
 		 where block_number = :block_number and log_index = :log_index`,
 		event)
 	if err != nil {
+		panic(err)
+	}
+
+	if err = dbtx.Commit(); err != nil {
 		panic(err)
 	}
 }
@@ -372,10 +382,10 @@ func ParseNaiveBatch(batch []byte, ethereum_event_log_id uint64) []NaiveTx {
 	return ret
 }
 
-func (tx NaiveTx) Effects(db *DB) ([]Query, []AzimuthDiff) {
+func (tx NaiveTx) Effects(dbtx Tx) ([]Query, []AzimuthDiff) {
 	// helper func
 	get_point := func(n AzimuthNumber) (ret Point) {
-		err := db.DB.Get(&ret, `select * from points where azimuth_number = ?`, n)
+		err := dbtx.Get(&ret, `select * from points where azimuth_number = ?`, n)
 		if err != nil {
 			panic(err)
 		}
@@ -506,7 +516,7 @@ func (tx NaiveTx) Effects(db *DB) ([]Query, []AzimuthDiff) {
 		}
 		// 5. Assert the TargetShip isn't spawned yet (not in points map, in naive.hoon)
 		var target Point
-		err := db.DB.Get(&target, `select * from points where azimuth_number = ?`, tx.TargetShip)
+		err := dbtx.Get(&target, `select * from points where azimuth_number = ?`, tx.TargetShip)
 		if err == nil {
 			// Row found; point already exists
 			fmt.Printf("Ignoring tx: target ship is already spawned\n")
