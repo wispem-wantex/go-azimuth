@@ -215,9 +215,13 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 	switch e.Topic0 {
 	case SPAWNED:
 		p := Point{
-			Number: topic_to_azimuth_number(e.Topic2),
+			Number:     topic_to_azimuth_number(e.Topic2),
+			Sponsor:    topic_to_azimuth_number(e.Topic1),
+			HasSponsor: true,
 		}
-		return Query{`insert into points (azimuth_number) values (:azimuth_number)`, p},
+		return Query{`
+			insert into points (azimuth_number, has_sponsor, sponsor)
+			            values (:azimuth_number, :has_sponsor, :sponsor)`, p},
 			[]AzimuthDiff{{SourceEventLogID: e.ID, IntraLogIndex: 0, AzimuthNumber: p.Number, Operation: DIFF_SPAWNED}}
 
 	case ACTIVATED:
