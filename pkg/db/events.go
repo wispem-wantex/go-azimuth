@@ -155,10 +155,10 @@ func (db *DB) ApplyEventEffects(events []EthereumEventLog) {
 	if err != nil {
 		panic(err)
 	}
-	tx := &Tx{t}
+	tx := Tx{t}
 
 	for _, e := range events {
-		effects, diffs := e.Effects()
+		effects, diffs := e.Effects(tx)
 
 		// Apply the query
 		if effects.SQL != "" {
@@ -212,7 +212,16 @@ func azimuth_number_to_data(u AzimuthNumber) []byte {
 	return ret
 }
 
-func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
+func (tx Tx) GetDominion(p AzimuthNumber) (int) {
+	var dominion int
+	err := tx.Get(&dominion, `select dominion from points where azimuth_number = ?`, p)
+	if err != nil {
+		panic(err)
+	}
+	return dominion
+}
+
+func (e EthereumEventLog) Effects(tx Tx) (Query, []AzimuthDiff) {
 	switch e.Topic0 {
 	case SPAWNED:
 		p := Point{
@@ -239,8 +248,8 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			            values (:azimuth_number, :is_active, :sponsor, :has_sponsor)
 			on conflict do update
 			        set is_active=:is_active,
-			        set sponsor=:sponsor,
-			        set has_sponsor=:has_sponsor`,
+			            sponsor=:sponsor,
+			            has_sponsor=:has_sponsor`,
 				p,
 			}
 
@@ -260,6 +269,13 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			Number:       topic_to_azimuth_number(e.Topic1),
 			OwnerAddress: topic_to_eth_address(e.Topic2),
 		}
+
+
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		if p.OwnerAddress == L2_DEPOSIT_ADDRESS {
 			// Deposited to L2
 			p.Dominion = 2
@@ -282,8 +298,7 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				insert into points (azimuth_number, owner_address)
 							values (:azimuth_number, :owner_address)
 				on conflict do update
-				        set owner_address=:owner_address
-			          where dominion != 2`,
+				        set owner_address=:owner_address`,
 					p,
 				},
 				[]AzimuthDiff{{
@@ -299,6 +314,11 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			Number:       topic_to_azimuth_number(e.Topic1),
 			SpawnAddress: topic_to_eth_address(e.Topic2),
 		}
+
+		if tx.GetDominion(p.Number) != 1 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		if p.Number <= 0xffff && p.SpawnAddress == L2_DEPOSIT_ADDRESS {
 			// Setting spawn proxy to the L2 deposit address represents migrating to the "Spawn"
 			// dominion.  It's not a real / valid change of spawn proxy address.
@@ -311,8 +331,7 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				insert into points (azimuth_number, dominion)
 				            values (:azimuth_number, :dominion)
 				on conflict do update
-				        set dominion=:dominion
-			          where dominion != 2`,
+				        set dominion=:dominion`,
 					p,
 				},
 				[]AzimuthDiff{{
@@ -328,8 +347,7 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				insert into points (azimuth_number, spawn_address)
 				            values (:azimuth_number, :spawn_address)
 				on conflict do update
-				        set spawn_address=:spawn_address
-			          where dominion != 2`,
+				        set spawn_address=:spawn_address`,
 					p,
 				},
 				[]AzimuthDiff{{
@@ -345,12 +363,16 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			Number:          topic_to_azimuth_number(e.Topic1),
 			TransferAddress: topic_to_eth_address(e.Topic2),
 		}
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, transfer_address)
 			            values (:azimuth_number, :transfer_address)
 			on conflict do update
-			        set transfer_address=:transfer_address
-			      where dominion != 2`,
+			        set transfer_address=:transfer_address`,
 				p,
 			},
 			[]AzimuthDiff{{
@@ -365,12 +387,16 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			Number:            topic_to_azimuth_number(e.Topic1),
 			ManagementAddress: topic_to_eth_address(e.Topic2),
 		}
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, management_address)
 			            values (:azimuth_number, :management_address)
 			on conflict do update
-			        set management_address=:management_address
-			      where dominion != 2`,
+			        set management_address=:management_address`,
 				p,
 			},
 			[]AzimuthDiff{{
@@ -385,12 +411,16 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			Number:        topic_to_azimuth_number(e.Topic1),
 			VotingAddress: topic_to_eth_address(e.Topic2),
 		}
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, voting_address)
 			            values (:azimuth_number, :voting_address)
 			on conflict do update
-			        set voting_address=:voting_address
-			      where dominion != 2`,
+			        set voting_address=:voting_address`,
 				p,
 			},
 			[]AzimuthDiff{{
@@ -406,13 +436,17 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			IsEscapeRequested: true,
 			EscapeRequestedTo: topic_to_azimuth_number(e.Topic2),
 		}
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, is_escape_requested, escape_requested_to)
 			            values (:azimuth_number, 1, :escape_requested_to)
 			on conflict do update
 			        set is_escape_requested=1,
-			            escape_requested_to=:escape_requested_to
-			      where dominion != 2`,
+			            escape_requested_to=:escape_requested_to`,
 				p,
 			},
 			[]AzimuthDiff{{
@@ -428,12 +462,16 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			IsEscapeRequested: false,
 			EscapeRequestedTo: AzimuthNumber(0),
 		}
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, is_escape_requested, escape_requested_to)
 			            values (:azimuth_number, 0, 0)
 			on conflict do update
-			        set is_escape_requested=0, escape_requested_to=0
-			      where dominion != 2`,
+			        set is_escape_requested=0, escape_requested_to=0`,
 				p,
 			},
 			[]AzimuthDiff{{
@@ -444,14 +482,19 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				Data:             azimuth_number_to_data(p.EscapeRequestedTo),
 			}}
 	case ESCAPE_ACCEPTED:
-		// TODO: ignore event if new sponsor is L2 (not sure how this could happen, but it's in naive.hoon)
+		parent := topic_to_azimuth_number(e.Topic2)
 		p := Point{
 			Number:            topic_to_azimuth_number(e.Topic1),
 			IsEscapeRequested: false,
 			EscapeRequestedTo: AzimuthNumber(0),
 			HasSponsor:        true,
-			Sponsor:           topic_to_azimuth_number(e.Topic2),
+			Sponsor:           parent,
 		}
+
+		if tx.GetDominion(parent) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, is_escape_requested, escape_requested_to, has_sponsor, sponsor)
 			            values (:azimuth_number, :is_escape_requested, :escape_requested_to, :has_sponsor, :sponsor)
@@ -470,11 +513,31 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				Data:             azimuth_number_to_data(p.EscapeRequestedTo),
 			}}
 	case LOST_SPONSOR:
-		// TODO: ignore event if lost sponsor (e.Topic2) isn't this point's sponsor
-		// TODO: ignore event if new sponsor is L2 (not sure how this could happen, but it's in naive.hoon)
+		point := topic_to_azimuth_number(e.Topic1)
+		sponsor := topic_to_azimuth_number(e.Topic2)
+
 		p := Point{
-			Number:     topic_to_azimuth_number(e.Topic1),
+			Number:     point,
 			HasSponsor: false,
+		}
+
+		var q struct {
+			HasSponsor int `db:"has_sponsor"`
+			Sponsor    AzimuthNumber `db:"sponsor"`
+			SponsorDominion int `db:"sponsor_dominion"`
+
+		}
+		err := tx.Get(&q, `
+			select p.has_sponsor, p.sponsor, s.dominion as sponsor_dominion
+			from points p left join points s ON p.sponsor = s.azimuth_number
+			where p.azimuth_number = ?`,
+			point)
+		if err != nil {
+			panic(err)
+		}
+
+		if q.HasSponsor == 0 ||  sponsor != q.Sponsor || q.SponsorDominion == 2 {
+			return Query{}, []AzimuthDiff{}
 		}
 		return Query{`
 			insert into points (azimuth_number, has_sponsor)
@@ -494,12 +557,16 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			Number: topic_to_azimuth_number(e.Topic1),
 			Rift:   binary.BigEndian.Uint32(e.Data[len(e.Data)-4:]), // rift number is not indexed
 		}
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, rift)
 			            values (:azimuth_number, :rift)
 			on conflict do update
-			        set rift=:rift
-			      where dominion != 2`,
+			        set rift=:rift`,
 				p,
 			},
 			[]AzimuthDiff{{
@@ -513,6 +580,7 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 		if len(e.Data) != 32*4 { // Four 32-byte EVM words
 			panic(len(e.Data))
 		}
+
 		p := Point{
 			Number:             topic_to_azimuth_number(e.Topic1),
 			EncryptionKey:      e.Data[:32],
@@ -520,6 +588,11 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			CryptoSuiteVersion: binary.BigEndian.Uint32([]byte(e.Data[32*3-4 : 32*3])),
 			Life:               binary.BigEndian.Uint32([]byte(e.Data[32*4-4 : 32*4])),
 		}
+
+		if tx.GetDominion(p.Number) == 2 {
+			return Query{}, []AzimuthDiff{}
+		}
+
 		return Query{`
 			insert into points (azimuth_number, encryption_key, auth_key, crypto_suite_version, life)
 			            values (:azimuth_number, :encryption_key, :auth_key, :crypto_suite_version, :life)
@@ -527,8 +600,7 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			        set encryption_key=:encryption_key,
 			            auth_key=:auth_key,
 			            crypto_suite_version=:crypto_suite_version,
-			            life=:life
-			      where dominion != 2`,
+			            life=:life`,
 				p,
 			},
 			[]AzimuthDiff{{
