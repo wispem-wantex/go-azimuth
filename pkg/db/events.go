@@ -230,24 +230,30 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 			IsActive:   true,
 			HasSponsor: true,
 		}
-		if p.Number < 0x10000 {
-			// A star's original sponsor is a galaxy
-			p.Sponsor = p.Number % 0x100
-		} else {
-			// A planet's original sponsor is a star
-			p.Sponsor = p.Number % 0x10000
-		}
-		return Query{`
-			insert into points (azimuth_number, is_active, has_sponsor, sponsor)
-			            values (:azimuth_number, :is_active, :has_sponsor, :sponsor)
+		var query Query
+		if p.Number.Rank() == GALAXY {
+			p.Sponsor = p.Number
+			query = Query{`
+			insert into points (azimuth_number, is_active, sponsor, has_sponsor)
+			            values (:azimuth_number, :is_active, :sponsor, :has_sponsor)
 			on conflict do update
 			        set is_active=:is_active,
-			            has_sponsor=:has_sponsor,
-			            sponsor=:sponsor`,
+			        set sponsor=:sponsor,
+			        set has_sponsor=:has_sponsor`,
 				p,
-			},
-			[]AzimuthDiff{{SourceEventLogID: e.ID, IntraLogIndex: 0, AzimuthNumber: p.Number, Operation: DIFF_ACTIVATED}}
+			}
 
+		} else {
+			query = Query{`
+			insert into points (azimuth_number, is_active)
+			            values (:azimuth_number, :is_active)
+			on conflict do update
+			        set is_active=:is_active`,
+				p,
+			}
+
+		}
+		return query, []AzimuthDiff{{SourceEventLogID: e.ID, IntraLogIndex: 0, AzimuthNumber: p.Number, Operation: DIFF_ACTIVATED}}
 	case OWNER_CHANGED:
 		p := Point{
 			Number:       topic_to_azimuth_number(e.Topic1),
