@@ -304,7 +304,8 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				insert into points (azimuth_number, dominion)
 				            values (:azimuth_number, :dominion)
 				on conflict do update
-				        set dominion=:dominion`,
+				        set dominion=:dominion
+			          where dominion != 2`,
 					p,
 				},
 				[]AzimuthDiff{{
@@ -320,7 +321,8 @@ func (e EthereumEventLog) Effects() (Query, []AzimuthDiff) {
 				insert into points (azimuth_number, spawn_address)
 				            values (:azimuth_number, :spawn_address)
 				on conflict do update
-				        set spawn_address=:spawn_address`,
+				        set spawn_address=:spawn_address
+			          where dominion != 2`,
 					p,
 				},
 				[]AzimuthDiff{{
