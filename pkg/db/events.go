@@ -241,6 +241,13 @@ func (e EthereumEventLog) Effects(tx Tx) (Query, []AzimuthDiff) {
 			HasSponsor: true,
 		}
 		var query Query
+
+		// Galaxies don't emit SPAWN events.  Therefore, we set their sponsor to themselves on
+		// activation, to match behavior of `naive.hoon`.
+		//
+		// Confer:
+		// - `Azimuth#registerSpawned` function in `Azimuth.sol`, which blocks Spawn events for galaxies
+		// - `++  get-point` and `++  sein` in `naive.hoon`, which evaluate galaxies as their own sponsor
 		if p.Number.Rank() == GALAXY {
 			p.Sponsor = p.Number
 			query = Query{`
