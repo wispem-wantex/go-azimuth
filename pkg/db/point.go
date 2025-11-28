@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
-	"net/http"
-	"io"
 
 	"github.com/ethereum/go-ethereum/common"
-
 )
 
 type AzimuthRank uint
@@ -331,8 +330,8 @@ type RollerPoint struct {
 		} `json:"transferProxy"`
 	} `json:"ownership"`
 	Network struct {
-                Escape *AzimuthNumber `json:"escape,omitempty"`
-		Keys struct {
+		Escape *AzimuthNumber `json:"escape,omitempty"`
+		Keys   struct {
 			Life  string `json:"life"`
 			Suite string `json:"suite"`
 			Auth  string `json:"auth"`
@@ -351,7 +350,6 @@ type RollerPoint struct {
 		Rift string `json:"rift"`
 	} `json:"network"`
 }
-
 
 func (db DB) CheckPointsAgainstRoller(url string) error {
 	points, ok := db.GetPoints()

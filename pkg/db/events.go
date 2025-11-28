@@ -212,7 +212,7 @@ func azimuth_number_to_data(u AzimuthNumber) []byte {
 	return ret
 }
 
-func (tx Tx) GetDominion(p AzimuthNumber) (int) {
+func (tx Tx) GetDominion(p AzimuthNumber) int {
 	var dominion int
 	err := tx.Get(&dominion, `select dominion from points where azimuth_number = ?`, p)
 	if err != nil {
@@ -269,8 +269,6 @@ func (e EthereumEventLog) Effects(tx Tx) (Query, []AzimuthDiff) {
 			Number:       topic_to_azimuth_number(e.Topic1),
 			OwnerAddress: topic_to_eth_address(e.Topic2),
 		}
-
-
 
 		if tx.GetDominion(p.Number) == 2 {
 			return Query{}, []AzimuthDiff{}
@@ -522,10 +520,9 @@ func (e EthereumEventLog) Effects(tx Tx) (Query, []AzimuthDiff) {
 		}
 
 		var q struct {
-			HasSponsor int `db:"has_sponsor"`
-			Sponsor    AzimuthNumber `db:"sponsor"`
-			SponsorDominion int `db:"sponsor_dominion"`
-
+			HasSponsor      int           `db:"has_sponsor"`
+			Sponsor         AzimuthNumber `db:"sponsor"`
+			SponsorDominion int           `db:"sponsor_dominion"`
 		}
 		err := tx.Get(&q, `
 			select p.has_sponsor, p.sponsor, s.dominion as sponsor_dominion
@@ -536,7 +533,7 @@ func (e EthereumEventLog) Effects(tx Tx) (Query, []AzimuthDiff) {
 			panic(err)
 		}
 
-		if q.HasSponsor == 0 ||  sponsor != q.Sponsor || q.SponsorDominion == 2 {
+		if q.HasSponsor == 0 || sponsor != q.Sponsor || q.SponsorDominion == 2 {
 			return Query{}, []AzimuthDiff{}
 		}
 		return Query{`
