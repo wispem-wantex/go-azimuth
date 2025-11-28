@@ -1,7 +1,6 @@
 package db_test
 
 import (
-	// "fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,13 +23,20 @@ func TestRiftEvent(t *testing.T) {
 		Topic2:          common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000"),
 		Data:            hex_to_bytes("0000000000000000000000000000000000000000000000000000000000000001"),
 	}
-	q, diffs := event.Effects()
+
+	azm_num := AzimuthNumber(1524870304)
+	db, err := DBCreate(":memory:")
+	assert.NoError(err)
+	db.DB.MustExec(`insert into points (azimuth_number, dominion) values (?, 1)`, azm_num)
+	tx := Tx{db.DB.MustBegin()}
+
+	q, diffs := event.Effects(tx)
 	p, is_ok := q.BindValues.(Point)
 	require.True(is_ok)
 	assert.Equal(uint32(1), p.Rift)
-	assert.Equal(AzimuthNumber(1524870304), p.Number)
+	assert.Equal(azm_num, p.Number)
 	require.Len(diffs, 1)
 	assert.Equal(DIFF_BREACHED, diffs[0].Operation)
-	assert.Equal(AzimuthNumber(1524870304), diffs[0].AzimuthNumber)
+	assert.Equal(azm_num, diffs[0].AzimuthNumber)
 	assert.Equal([]byte{0x0, 0x0, 0x0, 0x1}, diffs[0].Data)
 }
