@@ -142,10 +142,9 @@ func diff_roller() {
 	require_roller_url()
 	db := get_db(DB_PATH)
 	fmt.Println("Diffing roller state")
-	if err := db.CheckPointsAgainstRoller(ROLLER_URL); err != nil {
+	if err := CheckPointsAgainstRoller(db, ROLLER_URL); err != nil {
 		fmt.Println(err)
 	}
-
 }
 
 func query(urbit_id string) {
