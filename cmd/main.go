@@ -20,6 +20,7 @@ import (
 )
 
 var ETHEREUM_RPC_URL = ""
+var ROLLER_URL = ""
 
 var DB_PATH = ""
 
@@ -32,6 +33,15 @@ func get_db(path string) pkg_db.DB {
 		}
 	}
 	return db
+}
+
+func require_roller_url() {
+	if ROLLER_URL == "" {
+		fmt.Printf(
+			"This command requires a roller url.  You can provide one using the environment variable " +
+				"\"ROLLER_URL\".\nA typical local roller url would be http://localhost/v1/roller.\n")
+		os.Exit(1)
+	}
 }
 
 func require_eth_rpc_url() {
@@ -50,6 +60,10 @@ func require_eth_rpc_url() {
 func main() {
 	if val, is_ok := os.LookupEnv("ETHEREUM_RPC_URL"); is_ok {
 		ETHEREUM_RPC_URL = val
+	}
+
+	if val, is_ok := os.LookupEnv("ROLLER_URL"); is_ok {
+		ROLLER_URL = val
 	}
 
 	flag.StringVar(&DB_PATH, "db", "azimuth.db", "database file")
@@ -73,6 +87,8 @@ func main() {
 		query(args[1])
 	case "show_logs":
 		show_logs(args[1])
+	case "diff_roller":
+		diff_roller()
 	case "checkpoint":
 		if len(args) < 2 {
 			panic("Gotta provide a path to checkpoint into")
@@ -120,6 +136,15 @@ func play_logs() {
 	db.PlayAzimuthLogs()
 	fmt.Println("Playing naive logs")
 	db.PlayNaiveLogs()
+}
+
+func diff_roller() {
+	require_roller_url()
+	db := get_db(DB_PATH)
+	fmt.Println("Diffing roller state")
+	if err := CheckPointsAgainstRoller(db, ROLLER_URL); err != nil {
+		fmt.Println(err)
+	}
 }
 
 func query(urbit_id string) {

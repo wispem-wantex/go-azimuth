@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -36,7 +37,7 @@ func (p AzimuthNumber) Parent() AzimuthNumber {
 
 // Get the "rank" of an Azimuth point
 func (p AzimuthNumber) Rank() AzimuthRank {
-	if p < 0xff {
+	if p <= 0xff {
 		return GALAXY
 	} else if p <= 0xffff {
 		return STAR
@@ -98,6 +99,17 @@ func (db DB) GetPoint(azimuth_number AzimuthNumber) (Point, bool) {
 	err := db.DB.Get(&ret, `select * from points where azimuth_number = ?`, azimuth_number)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Point{}, false
+	} else if err != nil {
+		panic(err)
+	}
+	return ret, true
+}
+
+func (db DB) GetPoints() ([]Point, bool) {
+	var ret []Point
+	err := db.DB.Select(&ret, "select * from points")
+	if errors.Is(err, sql.ErrNoRows) {
+		return []Point{}, false
 	} else if err != nil {
 		panic(err)
 	}
